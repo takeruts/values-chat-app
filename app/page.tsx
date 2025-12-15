@@ -55,14 +55,34 @@ export default function Home() {
       alert('つぶやきを入力してください')
       return
     }
-
+    
+    // ログインチェック
+    if (!user || !user.id) {
+        alert('ログインが必要です。ログインページに移動します。')
+        router.push('/login')
+        return
+    }
+    
     setLoading(true)
     setMatches([])
 
     try {
+      // 👇 修正箇所: 変数名を sessionData に変更
+      const { data: sessionData } = await supabase.auth.getSession(); 
+      const token = sessionData.session?.access_token;
+      
+      if (!token) {
+        alert('セッショントークンが見つかりません。再ログインしてください。');
+        router.push('/login')
+        return
+      }
+      
       const res = await fetch('/api/save_value', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({ text: inputText, nickname: nickname }),
       })
 
@@ -71,6 +91,7 @@ export default function Home() {
         throw new Error('APIエラー: サーバー設定を確認してください')
       }
       
+      // 👇 変数名 data はそのまま（APIレスポンスデータ）
       const data = JSON.parse(textResponse)
 
       if (res.ok) {
@@ -134,7 +155,6 @@ export default function Home() {
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
         
-        {/* 👇 変更箇所: タイトルを「つぶやく」に変更 */}
         <h2 className="text-xl md:text-2xl font-bold mb-6 text-center text-gray-700">
           今の気持ちをつぶやく
         </h2>
@@ -159,7 +179,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* 👇 変更箇所: プレースホルダーを指定の内容に変更 */}
           <textarea
             className="w-full p-4 border rounded-lg shadow-inner h-32 focus:ring-2 focus:ring-blue-400 outline-none text-base"
             placeholder="楽しかったこと、苦しかったこと、好きなこと、嫌いなことを、どんどんつぶやいてください。"
@@ -177,17 +196,17 @@ export default function Home() {
         </div>
 
         <div className="mt-8">
-           {matches.length > 0 && (
-             <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと波長が合いそうな人</h3>
-           )}
-           
-           <MatchList matches={matches} currentUserId={user?.id} />
-           
-           {matches.length === 0 && !loading && (
-             <p className="text-center text-gray-400 mt-10 text-sm">
-               ここにマッチング結果が表示されます
-             </p>
-           )}
+            {matches.length > 0 && (
+              <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと波長が合いそうな人</h3>
+            )}
+            
+            <MatchList matches={matches} currentUserId={user?.id} />
+            
+            {matches.length === 0 && !loading && (
+              <p className="text-center text-gray-400 mt-10 text-sm">
+                ここにマッチング結果が表示されます
+              </p>
+            )}
         </div>
 
       </main>
