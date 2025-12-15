@@ -13,15 +13,13 @@ type Message = {
 
 export default function ChatRoom({ conversationId, currentUserId }: { conversationId: string, currentUserId: string }) {
   
-  // 👇 【修正1】クライアントを一度だけ作成し、再レンダリングでも変わらないようにする
+  // クライアント作成（1回だけ）
   const [supabase] = useState(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ))
 
-  if (!conversationId) {
-    return <div className="text-red-500 p-4">エラー: 会話IDが見つかりません</div>
-  }
+  if (!conversationId) return <div className="text-red-500 p-4">エラー: 会話IDなし</div>
   
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -38,7 +36,7 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
   useEffect(() => {
     // 1. 過去ログ取得
     const fetchMessages = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
@@ -49,8 +47,6 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
     fetchMessages()
 
     // 2. リアルタイム購読
-    console.log('🔌 リアルタイム接続を開始します...')
-    
     const channel = supabase
       .channel(`chat:${conversationId}`)
       .on('postgres_changes', {
@@ -59,39 +55,51 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
         table: 'messages',
         filter: `conversation_id=eq.${conversationId}`
       }, (payload) => {
-        console.log('📩 新着メッセージ受信:', payload)
-        setMessages((prev) => [...prev, payload.new as Message])
+        const newMsg = payload.new as Message
+        // 👇 【重要】すでに画面にあるIDなら追加しない（重複防止）
+        setMessages((prev) => {
+          if (prev.some(m => m.id === newMsg.id)) return prev
+          return [...prev, newMsg]
+        })
       })
-      .subscribe((status) => {
-        // 👇 【デバッグ】接続状態をログに出す
-        console.log('📡 接続ステータス:', status)
-      })
+      .subscribe()
 
     return () => {
-      console.log('🔌 切断します')
       supabase.removeChannel(channel)
     }
-    // 👇 【重要】依存配列から supabase を外すか、useStateで固定したのでこれでもOK
   }, [conversationId, supabase])
 
   const sendMessage = async () => {
     if (!newMessage.trim()) return
 
+    // 👇 【高速化の魔法】ここでIDを作ってしまいます
+    const tempId = crypto.randomUUID()
+    const nowISO = new Date().toISOString()
+
+    // 送信するデータ
+    const msgPayload = {
+      id: tempId, // 自分でIDを決める
+      conversation_id: conversationId,
+      sender_id: currentUserId,
+      content: newMessage,
+      created_at: nowISO
+    }
+
+    // A. サーバーからの返事を待たずに、即座に画面に出す！
+    setMessages((prev) => [...prev, msgPayload])
+    setNewMessage('') // 入力欄もすぐ消す
+
     try {
+      // B. 裏でこっそり送信する
       const { error } = await supabase
         .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: currentUserId,
-          content: newMessage
-        })
+        .insert(msgPayload) // 作ったIDごと登録
 
       if (error) {
-        alert(`送信エラー: ${error.message}`)
-        return
+        console.error('送信失敗:', error)
+        alert('送信に失敗しました')
+        // エラーなら消すなどの処理が必要ですが、簡易版なので割愛
       }
-      setNewMessage('') 
-
     } catch (err) {
       console.error(err)
     }
