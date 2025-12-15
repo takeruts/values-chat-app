@@ -1,3 +1,5 @@
+// app/page.tsx
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -6,12 +8,24 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MatchList from '@/components/MatchList'
 
+// 投稿データの型定義
+type Post = {
+  id: string;
+  content: string;
+  created_at: string;
+}
+
 export default function Home() {
   const [inputText, setInputText] = useState('')
   const [nickname, setNickname] = useState('') 
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
+  
+  // ユーザーの過去の投稿を保持する State
+  const [userPosts, setUserPosts] = useState<Post[]>([]) 
+  // 投稿履歴のロード状態
+  const [postsLoading, setPostsLoading] = useState(true)
 
   const router = useRouter()
   const supabase = createBrowserClient(
@@ -19,24 +33,51 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  /**
+   * ユーザー情報と投稿履歴を取得するコア関数
+   */
+  const fetchUserAndPosts = async (userId: string) => {
+    setPostsLoading(true);
+    
+    // ニックネームの取得
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('nickname')
+        .eq('id', userId)
+        .single()
+
+    if (profile?.nickname) {
+        setNickname(profile.nickname)
+    }
+    
+    // ユーザーの過去の投稿を取得 (最新順)
+    const { data: postsData, error: postsError } = await supabase
+        .from('posts')
+        .select('id, content, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+    if (postsError) {
+        console.error('Failed to fetch user posts:', postsError);
+    } else if (postsData) {
+        setUserPosts(postsData);
+    }
+    
+    setPostsLoading(false);
+  }
+
   useEffect(() => {
-    const getUserAndProfile = async () => {
+    const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       
       if (user) {
         setUser(user)
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('nickname')
-          .eq('id', user.id)
-          .single()
-
-        if (profile?.nickname) {
-          setNickname(profile.nickname)
-        }
+        await fetchUserAndPosts(user.id);
+      } else {
+        setPostsLoading(false);
       }
     }
-    getUserAndProfile()
+    checkUser();
   }, [])
 
   const handleLogout = async () => {
@@ -66,8 +107,10 @@ export default function Home() {
     setLoading(true)
     setMatches([])
 
+    const currentInputText = inputText; // 投稿テキストを保持
+    setInputText(''); // 投稿直後に入力欄をクリア
+
     try {
-      // 👇 修正箇所: 変数名を sessionData に変更
       const { data: sessionData } = await supabase.auth.getSession(); 
       const token = sessionData.session?.access_token;
       
@@ -83,7 +126,7 @@ export default function Home() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify({ text: inputText, nickname: nickname }),
+        body: JSON.stringify({ text: currentInputText, nickname: nickname }), // 保持したテキストを使用
       })
 
       const textResponse = await res.text()
@@ -91,17 +134,20 @@ export default function Home() {
         throw new Error('APIエラー: サーバー設定を確認してください')
       }
       
-      // 👇 変数名 data はそのまま（APIレスポンスデータ）
       const data = JSON.parse(textResponse)
 
       if (res.ok) {
         setMatches(data.matches)
-        setInputText('') // 投稿後に空にする
+        
+        // 👇 修正: 投稿成功後、履歴を再取得して正確に更新
+        await fetchUserAndPosts(user.id); 
+
       } else {
         throw new Error(data.error || '失敗しました')
       }
 
     } catch (error: any) {
+      // エラー時は入力中のテキストを戻さない（再送信を防ぐため）
       alert(error.message)
     } finally {
       setLoading(false)
@@ -195,6 +241,7 @@ export default function Home() {
           </button>
         </div>
 
+        {/* マッチング結果表示セクション */}
         <div className="mt-8">
             {matches.length > 0 && (
               <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと波長が合いそうな人</h3>
@@ -208,6 +255,31 @@ export default function Home() {
               </p>
             )}
         </div>
+        
+        <hr className="my-10 border-gray-300" />
+        
+        {/* 過去の投稿履歴セクション */}
+        <div className="mt-10">
+          <h3 className="text-xl font-bold mb-4 text-gray-700">あなたの過去のつぶやき ({userPosts.length}件)</h3>
+          
+          {postsLoading ? (
+            <p className="text-center text-gray-500">履歴を読み込み中...</p>
+          ) : userPosts.length === 0 ? (
+            <p className="text-center text-gray-400 mt-5 text-sm">まだ投稿がありません。</p>
+          ) : (
+            <div className="space-y-4">
+              {userPosts.map((post) => (
+                <div key={post.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                  <p className="text-gray-800 whitespace-pre-wrap">{post.content}</p>
+                  <p className="text-xs text-gray-400 mt-2 text-right">
+                    {new Date(post.created_at).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
 
       </main>
     </div>

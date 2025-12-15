@@ -2,55 +2,81 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createBrowserClient } from '@supabase/ssr' // Supabaseクライアントのインポート
 
 // マッチングデータの型定義
 type Match = {
-  id: number
+  id: number // DBレコードID。キーには不適。
   content: string
   similarity: number
   nickname: string
-  user_id: string 
+  user_id: string // 👈 これがユニークなキーとして最適
 }
 
-// 👇 Propsの型定義に currentUserId を追加
+// Propsの型定義
 type MatchListProps = {
   matches: Match[]
-  currentUserId?: string // ログインしていない場合も考慮してオプショナル、または必須にする
+  currentUserId?: string
 }
 
 export default function MatchList({ matches, currentUserId }: MatchListProps) {
   const router = useRouter()
   const [loadingId, setLoadingId] = useState<string | null>(null)
 
+  // クライアントサイドのSupabaseインスタンスを作成
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
   const handleStartChat = async (targetUserId: string) => {
     if (loadingId) return
+    
+    // ログインチェック
+    if (!currentUserId) {
+        alert('チャットを開始するにはログインが必要です。');
+        router.push('/login');
+        return;
+    }
 
     try {
       setLoadingId(targetUserId)
+      
+      // 認証トークンを取得
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      if (!token) {
+          alert('セッション切れです。再ログインしてください。');
+          router.push('/login');
+          return;
+      }
 
       // 1. APIを呼び出して conversationId を取得
-      // ※このAPIの実装が必要です（後述）
-      const res = await fetch('/api/conversations', {
+      const res = await fetch('/api/create_room', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ targetUserId }),
+        body: JSON.stringify({ partnerId: targetUserId }),
       })
 
       if (!res.ok) {
-        throw new Error('会話ルームの作成に失敗しました')
+        const errorData = await res.json()
+        throw new Error(errorData.error || '会話ルームの作成に失敗しました')
       }
 
-      const data = await res.json()
-      const conversationId = data.conversationId
+      const apiData = await res.json()
+      const conversationId = apiData.conversationId
 
       // 2. 取得したIDを使ってチャット画面へ遷移
       router.push(`/chats/${conversationId}`)
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error starting chat:', error)
-      alert('エラーが発生しました。もう一度お試しください。')
+      alert(error.message || 'エラーが発生しました。もう一度お試しください。')
+    } finally {
       setLoadingId(null)
     }
   }
@@ -62,12 +88,13 @@ export default function MatchList({ matches, currentUserId }: MatchListProps) {
       )}
 
       {matches.map((match) => {
-        // 👇 自分自身かどうかの判定
+        // 自分自身かどうかの判定
         const isSelf = currentUserId === match.user_id;
 
         return (
           <div 
-            key={match.id} 
+            // 🚨 修正箇所: リストキーを match.user_id に変更
+            key={match.user_id} 
             className="border rounded-lg p-4 bg-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
           >
             {/* 左側：相手の情報 */}
