@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
-// 👇 追加: マッチングリストコンポーネントをインポート
+import Link from 'next/link'
 import MatchList from '@/components/MatchList'
 
 export default function Home() {
@@ -20,11 +20,23 @@ export default function Home() {
   )
 
   useEffect(() => {
-    const getUser = async () => {
+    const getUserAndProfile = async () => {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) setUser(user)
+      
+      if (user) {
+        setUser(user)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('nickname')
+          .eq('id', user.id)
+          .single()
+
+        if (profile?.nickname) {
+          setNickname(profile.nickname)
+        }
+      }
     }
-    getUser()
+    getUserAndProfile()
   }, [])
 
   const handleLogout = async () => {
@@ -35,8 +47,12 @@ export default function Home() {
   }
 
   const handleSave = async () => {
-    if (!inputText || !nickname) {
-      alert('ニックネームと文章を入力してください')
+    if (!nickname) {
+      alert('ニックネームが設定されていません。\n右上の「⚙️」からニックネームを登録してください。')
+      return
+    }
+    if (!inputText) {
+      alert('文章を入力してください')
       return
     }
 
@@ -44,8 +60,6 @@ export default function Home() {
     setMatches([])
 
     try {
-      // APIのエンドポイント名は実際のファイル名に合わせてください (例: /api/values など)
-      // ここでは元のコードのまま /api/save_value としています
       const res = await fetch('/api/save_value', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,41 +88,75 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-blue-600">My Values App</h1>
-        <div className="flex items-center gap-4">
+      <header className="bg-white shadow px-4 py-3 flex justify-between items-center sticky top-0 z-50">
+        {/* 👇 変更箇所: タイトルを カチピ に変更 */}
+        <h1 className="text-lg md:text-xl font-bold text-blue-600 truncate">
+          カチピ
+        </h1>
+        
+        <div className="flex items-center gap-3 md:gap-6">
           {user ? (
             <>
-            {/* 👇 追加: チャット一覧へのリンク */}
-            <a href="/chats" className="text-sm font-bold text-gray-600 hover:text-blue-600">
-           💬 トーク一覧
-            </a>
-              <span className="text-sm text-gray-600">{user.email}</span>
-              <button onClick={handleLogout} className="text-sm text-red-500 hover:underline">ログアウト</button>
+              {/* トーク一覧 */}
+              <Link href="/chats" className="flex items-center text-gray-600 hover:text-blue-600 transition">
+                <span className="text-xl">💬</span>
+                <span className="hidden md:inline text-sm font-bold ml-1">トーク</span>
+              </Link>
+
+              {/* 設定 */}
+              <Link href="/settings" className="flex items-center text-gray-600 hover:text-blue-600 transition">
+                <span className="text-xl">⚙️</span>
+                <span className="hidden md:inline text-sm font-bold ml-1">設定</span>
+              </Link>
+
+              {/* ユーザー名 (PCのみ) */}
+              <span className="text-sm font-bold text-gray-700 hidden md:inline truncate max-w-[150px]">
+                {nickname || user.email}
+              </span>
+
+              {/* ログアウト */}
+              <button 
+                onClick={handleLogout} 
+                className="text-red-500 hover:text-red-700 transition flex items-center"
+                title="ログアウト"
+              >
+                <span className="md:hidden text-xl">🚪</span>
+                <span className="hidden md:inline text-sm font-bold border border-red-200 px-3 py-1 rounded-full hover:bg-red-50">
+                  ログアウト
+                </span>
+              </button>
             </>
           ) : (
-            <a href="/login" className="text-blue-500">ログイン</a>
+            <Link href="/login" className="text-blue-500 font-bold text-sm">ログイン</Link>
           )}
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-8">
-        <h2 className="text-2xl font-bold mb-6 text-center">あなたの価値観を登録</h2>
+      <main className="max-w-3xl mx-auto p-4 md:p-8">
+        <h2 className="text-xl md:text-2xl font-bold mb-6 text-center">あなたの価値観を登録</h2>
         
-        <div className="bg-white p-6 rounded-lg shadow-sm mb-8">
+        <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm mb-8">
+          
           <div className="mb-4">
             <label className="block text-sm font-bold text-gray-700 mb-1">ニックネーム</label>
-            <input 
-              type="text" 
-              className="w-full p-2 border rounded shadow-sm focus:ring-2 focus:ring-blue-400 outline-none"
-              placeholder="例：タケシ"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-            />
+            <div className="flex items-center justify-between p-3 border rounded bg-gray-100 text-gray-800">
+              {nickname ? (
+                <span className="font-medium truncate max-w-[200px]">{nickname}</span>
+              ) : (
+                <span className="text-gray-400 text-sm">（未設定）</span>
+              )}
+              
+              <Link href="/settings" className="text-xs text-blue-600 hover:underline shrink-0 ml-2">
+                変更
+              </Link>
+            </div>
+            {!nickname && (
+               <p className="text-xs text-red-500 mt-1">※投稿にはニックネーム設定が必要です</p>
+            )}
           </div>
 
           <textarea
-            className="w-full p-4 border rounded-lg shadow-inner h-32 focus:ring-2 focus:ring-blue-400 outline-none"
+            className="w-full p-4 border rounded-lg shadow-inner h-32 focus:ring-2 focus:ring-blue-400 outline-none text-base"
             placeholder="例：都会の喧騒よりも、自然の中でゆっくり本を読む時間が好きです..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
@@ -116,24 +164,22 @@ export default function Home() {
 
           <button
             onClick={handleSave}
-            disabled={loading}
+            disabled={loading || !nickname}
             className="w-full mt-4 bg-blue-600 text-white font-bold py-3 rounded-lg shadow hover:bg-blue-700 transition disabled:bg-gray-400"
           >
             {loading ? 'AIが分析中...' : '保存して似ている人を探す'}
           </button>
         </div>
 
-        {/* 👇 修正箇所: 手動マップをやめてコンポーネントを使用 */}
         <div className="mt-8">
            {matches.length > 0 && (
-             <h3 className="text-xl font-bold mb-4 text-gray-700">あなたと価値観が近い人</h3>
+             <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと価値観が近い人</h3>
            )}
            
-           {/* ここに「話す」ボタン機能が含まれています */}
            <MatchList matches={matches} currentUserId={user?.id} />
            
            {matches.length === 0 && !loading && (
-             <p className="text-center text-gray-400 mt-10">
+             <p className="text-center text-gray-400 mt-10 text-sm">
                ここにマッチング結果が表示されます
              </p>
            )}
