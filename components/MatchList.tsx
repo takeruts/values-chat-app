@@ -46,7 +46,7 @@ export default function MatchList({ matches, currentUserId }: MatchListProps) {
       const conversationId = data.conversationId
 
       // 2. 取得したIDを使ってチャット画面へ遷移
-      router.push(`/chat/${conversationId}`)
+      router.push(`/chats/${conversationId}`)
 
     } catch (error) {
       console.error('Error starting chat:', error)

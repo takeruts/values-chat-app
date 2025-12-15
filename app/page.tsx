@@ -52,7 +52,7 @@ export default function Home() {
       return
     }
     if (!inputText) {
-      alert('文章を入力してください')
+      alert('つぶやきを入力してください')
       return
     }
 
@@ -75,6 +75,7 @@ export default function Home() {
 
       if (res.ok) {
         setMatches(data.matches)
+        setInputText('') // 投稿後に空にする
       } else {
         throw new Error(data.error || '失敗しました')
       }
@@ -89,7 +90,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
       <header className="bg-white shadow px-4 py-3 flex justify-between items-center sticky top-0 z-50">
-        {/* 👇 変更箇所: タイトルを カチピ に変更 */}
         <h1 className="text-lg md:text-xl font-bold text-blue-600 truncate">
           カチピ
         </h1>
@@ -109,7 +109,7 @@ export default function Home() {
                 <span className="hidden md:inline text-sm font-bold ml-1">設定</span>
               </Link>
 
-              {/* ユーザー名 (PCのみ) */}
+              {/* ユーザー名 */}
               <span className="text-sm font-bold text-gray-700 hidden md:inline truncate max-w-[150px]">
                 {nickname || user.email}
               </span>
@@ -133,7 +133,11 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
-        <h2 className="text-xl md:text-2xl font-bold mb-6 text-center">あなたの価値観を登録</h2>
+        
+        {/* 👇 変更箇所: タイトルを「つぶやく」に変更 */}
+        <h2 className="text-xl md:text-2xl font-bold mb-6 text-center text-gray-700">
+          今の気持ちをつぶやく
+        </h2>
         
         <div className="bg-white p-4 md:p-6 rounded-lg shadow-sm mb-8">
           
@@ -155,9 +159,10 @@ export default function Home() {
             )}
           </div>
 
+          {/* 👇 変更箇所: プレースホルダーを指定の内容に変更 */}
           <textarea
             className="w-full p-4 border rounded-lg shadow-inner h-32 focus:ring-2 focus:ring-blue-400 outline-none text-base"
-            placeholder="例：都会の喧騒よりも、自然の中でゆっくり本を読む時間が好きです..."
+            placeholder="楽しかったこと、苦しかったこと、好きなこと、嫌いなことを、どんどんつぶやいてください。"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
           />
@@ -167,13 +172,13 @@ export default function Home() {
             disabled={loading || !nickname}
             className="w-full mt-4 bg-blue-600 text-white font-bold py-3 rounded-lg shadow hover:bg-blue-700 transition disabled:bg-gray-400"
           >
-            {loading ? 'AIが分析中...' : '保存して似ている人を探す'}
+            {loading ? 'AIが分析中...' : 'つぶやいて仲間を探す'}
           </button>
         </div>
 
         <div className="mt-8">
            {matches.length > 0 && (
-             <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと価値観が近い人</h3>
+             <h3 className="text-lg md:text-xl font-bold mb-4 text-gray-700">あなたと波長が合いそうな人</h3>
            )}
            
            <MatchList matches={matches} currentUserId={user?.id} />

@@ -47,22 +47,23 @@ export default async function ChatsListPage() {
   }
 
   // 2. 各会話について「相手の名前」と「最後のメッセージ」を取得
-  // (Promise.allを使って並列処理で高速化します)
   const chatList = await Promise.all(
     conversations.map(async (conv): Promise<ChatPreview> => {
       // 相手のIDを特定
       const partnerId = conv.user_a_id === user.id ? conv.user_b_id : conv.user_a_id
 
-      // A. 相手のニックネーム取得
+      // -----------------------------------------------------------------
+      // 👇 修正箇所: values_cards から profiles に変更し、最新のニックネームを取得
+      // -----------------------------------------------------------------
+      // A. 相手のニックネーム取得 (profilesテーブルから最新のデータを取得するのが推奨)
       const { data: profile } = await supabase
-        .from('values_cards')
+        .from('profiles') // 👈 変更: values_cards から profiles へ
         .select('nickname')
-        .eq('user_id', partnerId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
+        .eq('id', partnerId) // 👈 変更: user_id ではなく profiles の id
+        .maybeSingle() 
       
       const partnerName = profile?.nickname || '名無しさん'
+      // -----------------------------------------------------------------
 
       // B. 最後のメッセージ取得
       const { data: lastMsg } = await supabase
@@ -106,7 +107,8 @@ export default async function ChatsListPage() {
         {chatList.map((chat) => (
           <Link 
             key={chat.conversationId} 
-            href={`/chat/${chat.conversationId}`}
+            // ページ名に合わせて修正: /chat/[conversationId] → /chats/[conversationId] が自然
+            href={`/chats/${chat.conversationId}`} 
             className="block hover:bg-gray-50 transition-colors"
           >
             <div className="flex items-center gap-4 p-4">
