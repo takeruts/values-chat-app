@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr' 
 
@@ -21,6 +21,7 @@ export default function MatchList({
 }) {
   const router = useRouter()
   const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [aiName, setAiName] = useState('のぞみ') // 🚨 追加：AI名用のステート
   const AI_USER_ID = '00000000-0000-0000-0000-000000000000'; 
 
   const supabase = createBrowserClient(
@@ -28,19 +29,42 @@ export default function MatchList({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  // 🚨 自分の設定からAIパートナー名を取得
+  useEffect(() => {
+    if (!currentUserId) return
+    const fetchAiSettings = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('ai_name, ai_gender')
+        .eq('id', currentUserId)
+        .single()
+      
+      if (data) {
+        if (data.ai_name) {
+          setAiName(data.ai_name)
+        } else if (data.ai_gender === 'male') {
+          setAiName('快')
+        }
+      }
+    }
+    fetchAiSettings()
+  }, [currentUserId, supabase])
+
   const sortedMatches = useMemo(() => {
     let list = [...(matches || [])];
     if (!list.some(m => m.user_id === AI_USER_ID)) {
       list.push({
         id: -1,
         user_id: AI_USER_ID,
-        nickname: 'のぞみ (AI)',
+        nickname: `${aiName} (AI)`, // 🚨 修正：取得したAI名を反映
         content: 'あなたの心に寄り添い、お話をお聞きします。',
         similarity: 1.0, 
       });
     }
-    return list.sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity));
-  }, [matches]);
+    // リスト内のAIの名前を最新の状態に更新
+    return list.map(m => m.user_id === AI_USER_ID ? { ...m, nickname: `${aiName} (AI)` } : m)
+               .sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity));
+  }, [matches, aiName]); // 🚨 aiNameが更新されたら再計算
 
   const handleStartChat = async (targetUserId: string) => {
     if (loadingId || !currentUserId) return
@@ -79,7 +103,7 @@ export default function MatchList({
             <div className="flex-1 min-w-0 text-left">
               <div className="flex items-center gap-3 mb-2">
                 <h3 className={`text-base font-bold ${isAI ? 'text-indigo-300' : 'text-gray-100'}`}>
-                  {isAI ? 'のぞみ (AI)' : (match.nickname || '名無しさん')}
+                  {match.nickname}
                 </h3>
                 {!isAI && (
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter">
@@ -101,7 +125,6 @@ export default function MatchList({
                     ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
                     : isAI 
                       ? 'bg-indigo-600/90 text-indigo-50 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20' 
-                      /* 🚨 修正：夜らしい「深い青緑」と「繊細なボーダー」の配色に変更 */
                       : 'bg-slate-700 text-cyan-100 hover:bg-slate-600 border border-cyan-500/30 shadow-lg shadow-black/40'
                 }`}
               >

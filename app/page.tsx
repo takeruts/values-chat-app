@@ -15,6 +15,7 @@ type Post = {
 export default function Home() {
   const [inputText, setInputText] = useState('')
   const [nickname, setNickname] = useState('') 
+  const [aiName, setAiName] = useState('のぞみ') // AI名の初期値
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
@@ -28,15 +29,36 @@ export default function Home() {
   )
 
   /**
-   * ユーザー情報と投稿履歴を取得
+   * 🚨 修正：DBから常に最新のプロフィール（ニックネーム・AI名・性別）と投稿を取得
    */
-  const fetchUserAndPosts = async (userId: string) => {
+  const fetchAllData = async (userId: string) => {
     setPostsLoading(true);
-    const { data: profile } = await supabase.from('profiles').select('nickname').eq('id', userId).single()
-    if (profile?.nickname) setNickname(profile.nickname)
+    
+    // プロフィールから設定をすべて取得
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('nickname, ai_name, ai_gender')
+      .eq('id', userId)
+      .single()
+    
+    if (profile) {
+      if (profile.nickname) setNickname(profile.nickname)
+      
+      // AI名の決定ロジック：カスタム名 > 性別デフォルト > 固定デフォルト
+      if (profile.ai_name) {
+        setAiName(profile.ai_name)
+      } else if (profile.ai_gender === 'male') {
+        setAiName('快')
+      } else {
+        setAiName('のぞみ')
+      }
+    }
     
     const { data: postsData, error: postsError } = await supabase
-        .from('posts').select('id, content, created_at').eq('user_id', userId).order('created_at', { ascending: false });
+        .from('posts')
+        .select('id, content, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
     if (!postsError && postsData) setUserPosts(postsData);
     setPostsLoading(false);
@@ -47,7 +69,7 @@ export default function Home() {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         setUser(user)
-        await fetchUserAndPosts(user.id);
+        await fetchAllData(user.id);
       } else {
         setPostsLoading(false);
       }
@@ -55,9 +77,6 @@ export default function Home() {
     checkUser();
   }, [])
 
-  /**
-   * 🚨 修正：ログアウト処理を追加
-   */
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setUser(null)
@@ -85,7 +104,8 @@ export default function Home() {
       const data = await res.json()
       if (res.ok) {
         setMatches(data.matches)
-        await fetchUserAndPosts(user.id);
+        // 🚨 保存後、最新のAI名を再取得して画面を更新
+        await fetchAllData(user.id);
       }
     } catch (error: any) {
       alert(error.message)
@@ -133,7 +153,7 @@ export default function Home() {
         {/* 投稿セクション */}
         <div className="bg-gray-800 p-5 md:p-8 rounded-2xl shadow-xl border border-gray-700">
           <div className="mb-6">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Nickname</label>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">ニックネーム</label>
             <div className="p-4 border rounded-xl bg-gray-900 text-gray-200 border-gray-700 flex justify-between items-center shadow-inner">
               <span className="font-bold">{nickname || '未設定'}</span>
               <Link href="/settings" className="text-xs text-indigo-400 font-bold px-3 py-1 bg-indigo-950/30 rounded-lg border border-indigo-900/50 hover:bg-indigo-900/50 transition-colors">
@@ -154,7 +174,8 @@ export default function Home() {
             disabled={loading || !nickname}
             className="w-full mt-8 bg-indigo-600 text-white font-black h-16 rounded-2xl shadow-xl hover:bg-indigo-500 transition active:scale-95 disabled:bg-gray-700 disabled:text-gray-500 text-base flex items-center justify-center tracking-widest"
           >
-            {loading ? 'AIが分析中...' : 'つぶやいてカチピ（仲間）を探す'}
+            {/* 🚨 修正：ここが設定した名前に切り替わります */}
+            {loading ? `${aiName} (AIパートナー)が分析中...` : 'つぶやいてカチピ（仲間）を探す'}
           </button>
         </div>
 
