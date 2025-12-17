@@ -8,76 +8,105 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  // Supabaseクライアント（ブラウザ用）
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // 新規登録ボタン
   const handleSignUp = async () => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
+    setLoading(true)
+    const { error } = await supabase.auth.signUp({ email, password })
     if (error) setMessage('エラー: ' + error.message)
-    else setMessage('確認メールを送信しました！メール内のリンクをクリックしてください。')
+    else setMessage('確認メールを送信しました！メールを確認してください。')
+    setLoading(false)
   }
 
-  // ログインボタン
   const handleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setMessage('エラー: ' + error.message)
+      setLoading(false)
     } else {
-      // ログイン成功したらトップページへ戻る
       router.push('/')
-      router.refresh() // 状態を更新
+      router.refresh()
     }
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="bg-white p-8 rounded shadow-md w-full max-w-sm">
-        <h1 className="text-2xl font-bold mb-6 text-center">ログイン / 登録</h1>
-        
-        <input
-          className="w-full border p-2 mb-4 rounded"
-          type="email"
-          placeholder="メールアドレス"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="w-full border p-2 mb-4 rounded"
-          type="password"
-          placeholder="パスワード"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-6 text-gray-200">
+      
+      {/* ロゴエリア */}
+      <div className="text-center mb-10 animate-in fade-in zoom-in duration-700">
+        <h1 className="text-4xl font-black text-indigo-400 tracking-tighter mb-2">カチピ</h1>
+        <p className="text-[10px] text-gray-500 uppercase tracking-[0.3em] font-bold opacity-70">
+          Deep Night Connection
+        </p>
+      </div>
 
-        <div className="flex gap-2 mb-4">
+      {/* ログインカード */}
+      <div className="bg-gray-900/40 backdrop-blur-xl p-8 rounded-[2.5rem] border border-gray-800 shadow-2xl w-full max-w-sm">
+        <h2 className="text-lg font-bold mb-8 text-center text-gray-100">扉をひらく</h2>
+        
+        <div className="space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1 block mb-1.5">Email</label>
+            <input
+              className="w-full bg-gray-950/50 border border-gray-800 p-4 rounded-2xl outline-none focus:border-indigo-500/50 transition-all text-gray-200 placeholder-gray-700"
+              type="email"
+              placeholder="your@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1 block mb-1.5">Password</label>
+            <input
+              className="w-full bg-gray-950/50 border border-gray-800 p-4 rounded-2xl outline-none focus:border-indigo-500/50 transition-all text-gray-200 placeholder-gray-700"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="mt-8 space-y-3">
           <button
             onClick={handleSignIn}
-            className="flex-1 bg-blue-600 text-white p-2 rounded hover:bg-blue-700"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white font-black p-4 rounded-2xl hover:bg-indigo-500 transition-all active:scale-95 shadow-lg shadow-indigo-900/20 disabled:opacity-50"
           >
-            ログイン
+            {loading ? '...' : 'ログイン'}
           </button>
+          
           <button
             onClick={handleSignUp}
-            className="flex-1 bg-green-600 text-white p-2 rounded hover:bg-green-700"
+            disabled={loading}
+            className="w-full bg-gray-800/50 text-indigo-300 font-bold p-4 rounded-2xl border border-indigo-500/20 hover:bg-gray-800 transition-all active:scale-95 disabled:opacity-50 text-sm"
           >
-            新規登録
+            新しくアカウントを作る
           </button>
         </div>
 
-        {message && <p className="text-red-500 text-sm text-center">{message}</p>}
+        {message && (
+          <div className={`mt-6 p-4 rounded-xl text-xs text-center leading-relaxed ${
+            message.includes('エラー') ? 'bg-red-950/20 text-red-400 border border-red-900/30' : 'bg-indigo-950/30 text-indigo-300 border border-indigo-900/30'
+          }`}>
+            {message}
+          </div>
+        )}
       </div>
+
+      <footer className="mt-12 text-center">
+        <p className="text-[10px] text-gray-700 font-medium tracking-widest uppercase italic">
+          &copy; 2025 Kachipi. All rights reserved.
+        </p>
+      </footer>
     </div>
   )
 }
