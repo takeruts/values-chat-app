@@ -1,4 +1,3 @@
-// components/ChatRoom.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -8,36 +7,32 @@ type Message = {
   id: string
   content: string
   sender_id: string
-  conversation_id: string
   created_at: string
-  isSending?: boolean 
-  hasError?: boolean
+  conversation_id: string
 }
 
-const AI_USER_ID = '00000000-0000-0000-0000-000000000000';
+type Props = {
+  conversationId: string
+  currentUserId: string
+  partnerId: string
+}
 
-export default function ChatRoom({ conversationId, currentUserId, partnerId }: { conversationId: string, currentUserId: string, partnerId: string }) {
-  // 1. supabaseクライアントをuseMemo的に保持して、依存配列での安定性を確保
-  const [supabase] = useState(() => createBrowserClient(
+export default function ChatRoom({ conversationId, currentUserId, partnerId }: Props) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [inputText, setInputText] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [isAiTyping, setIsAiTyping] = useState(false) // 🚨 AIの入力中ステート
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  ))
+  )
 
-  const [messages, setMessages] = useState<Message[]>([])
-  const [newMessage, setNewMessage] = useState('')
-  const [isAiTyping, setIsAiTyping] = useState(false)
-  const [isSending, setIsSending] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const AI_USER_ID = '00000000-0000-0000-0000-000000000000';
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
-
-  useEffect(() => { scrollToBottom() }, [messages, isAiTyping])
-
-  // 2. 依存配列を最小限にし、外部から渡される値を安定化させる
   useEffect(() => {
-    if (!conversationId) return;
+    if (!conversationId) return
 
     const fetchMessages = async () => {
       const { data } = await supabase
@@ -49,132 +44,123 @@ export default function ChatRoom({ conversationId, currentUserId, partnerId }: {
     }
     fetchMessages()
 
-    const channel = supabase.channel(`chat:${conversationId}`)
+    const channel = supabase
+      .channel(`chat:${conversationId}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
-        table: 'messages', 
+        table: 'messages',
         filter: `conversation_id=eq.${conversationId}` 
-      }, 
-      (payload) => {
-        const newMsg = payload.new as Message
-        
-        // 🚨 currentUserId を直接使わず、最新の state や ID判定をここで行う
-        // 自分のメッセージ（Optmistic UIで追加済）はスキップ
-        if (newMsg.sender_id === currentUserId) return;
-
-        setMessages((prev) => {
-          if (prev.some(m => m.id === newMsg.id)) return prev;
-          return [...prev, newMsg];
+      }, (payload) => {
+        const newMessage = payload.new as Message
+        setMessages((current) => {
+          if (current.find(m => m.id === newMessage.id)) return current
+          return [...current, newMessage]
         })
+        // AIのメッセージが届いたら入力中を解除
+        if (newMessage.sender_id === AI_USER_ID) {
+          setIsAiTyping(false)
+        }
+      })
+      .subscribe()
 
-        if (newMsg.sender_id === AI_USER_ID) setIsAiTyping(false);
-      }).subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [conversationId, supabase])
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
-    // 🚨 currentUserId がレンダリング中に undefined から ID に変わることで
-    // 配列のサイズエラーが起きるのを防ぐため、依存関係を整理
-  }, [conversationId, supabase, currentUserId])
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isAiTyping])
 
-  const sendMessage = async () => {
-    const content = newMessage.trim();
-    if (!content || isSending) return;
-
-    setIsSending(true);
-    setNewMessage('');
-
-    const tempId = crypto.randomUUID();
-    setMessages(prev => [...prev, { 
-      id: tempId, 
-      conversation_id: conversationId, 
-      sender_id: currentUserId, 
-      content, 
-      created_at: new Date().toISOString(), 
-      isSending: true 
-    }]);
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!inputText.trim() || loading) return
+    
+    const textToSend = inputText.trim()
+    setInputText('')
+    setLoading(true)
 
     try {
-      const { error } = await supabase.from('messages').insert({ 
-        id: tempId,
-        conversation_id: conversationId, 
-        sender_id: currentUserId, 
-        content 
-      });
-      if (error) throw error;
+      // 1. 自分のメッセージを保存
+      const { error: sendError } = await supabase.from('messages').insert({
+        conversation_id: conversationId,
+        sender_id: currentUserId,
+        content: textToSend
+      })
+      if (sendError) throw sendError
 
-      setMessages(prev => prev.map(msg => msg.id === tempId ? { ...msg, isSending: false } : msg));
-
+      // 相手がAIの場合、APIを叩く
       if (partnerId === AI_USER_ID) {
-        setIsAiTyping(true);
-        await fetch('/api/chat_with_ai', {
+        setIsAiTyping(true) // AI考え中スタート
+        const aiRes = await fetch('/api/chat_with_ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: content,
-            conversationId: conversationId,
-            history: messages.slice(-5)
+          body: JSON.stringify({ 
+            conversationId, 
+            message: textToSend, // API側の引数名に合わせる
+            history: messages.slice(-10) 
           }),
-        });
+        })
+        if (!aiRes.ok) setIsAiTyping(false)
       }
     } catch (err) {
-      setIsAiTyping(false);
-      setMessages(prev => prev.map(msg => msg.id === tempId ? { ...msg, hasError: true, isSending: false } : msg));
+      console.error(err)
+      setInputText(textToSend)
     } finally {
-      setIsSending(false);
+      setLoading(false)
     }
   }
 
   return (
-    <div className="flex flex-col h-[550px] w-full max-w-md bg-gray-800 rounded-lg border border-gray-700 shadow-2xl p-4">
-      <div className="flex-1 overflow-y-auto mb-4 pr-2 scrollbar-thin scrollbar-thumb-gray-700">
+    <div className="flex flex-col h-full bg-gray-900 overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
         {messages.map((msg) => {
-          const isMe = msg.sender_id === currentUserId;
-          const isAi = msg.sender_id === AI_USER_ID;
+          const isMine = msg.sender_id === currentUserId
           return (
-            <div key={msg.id} className={`flex flex-col w-full mb-4 ${isMe ? 'items-end' : 'items-start'}`}>
-              <div className={`px-4 py-2 rounded-2xl text-sm max-w-[85%] shadow-sm ${
-                isMe ? 'bg-indigo-600 text-white rounded-br-none' : 
-                isAi ? 'bg-indigo-900/60 text-indigo-100 border border-indigo-500/30 rounded-bl-none' : 
-                'bg-gray-700 text-gray-200 rounded-bl-none'
+            <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+              <div className={`max-w-[85%] px-4 py-3 rounded-2xl shadow-lg relative ${
+                isMine ? 'bg-indigo-600 text-white rounded-tr-none shadow-indigo-900/20' 
+                       : 'bg-gray-800 text-gray-100 rounded-tl-none border border-gray-700/50 shadow-black/40'
               }`}>
-                {msg.content}
+                <p className="text-sm leading-relaxed whitespace-pre-wrap tracking-wide">{msg.content}</p>
+                <span className={`text-[9px] mt-1.5 block opacity-40 font-mono italic ${isMine ? 'text-right' : 'text-left'}`}>
+                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
               </div>
-              {msg.isSending && <span className="text-[10px] text-indigo-400 mt-1 mr-1">...</span>}
             </div>
           )
         })}
+
+        {/* 🚨 AI考え中アニメーション */}
         {isAiTyping && (
-          <div className="flex flex-col items-start mb-4">
-            <div className="text-indigo-400 text-xs animate-pulse ml-2 italic bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-500/20">
-              のぞみが言葉を選んでいます...
+          <div className="flex justify-start animate-pulse">
+            <div className="bg-gray-800/50 text-indigo-300 px-4 py-3 rounded-2xl rounded-tl-none border border-indigo-500/20">
+              <div className="flex gap-1 items-center h-5">
+                <span className="w-1.5 h-1.5 bg-indigo-500/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-indigo-500/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-indigo-500/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              </div>
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
+        <div ref={scrollRef} className="h-2" />
       </div>
 
-      <div className="flex gap-2 border-t border-gray-700 pt-3">
-        <input 
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          value={newMessage} 
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="メッセージを入力..."
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              sendMessage();
-            }
-          }}
-        />
-        <button 
-          onClick={(e) => { e.preventDefault(); sendMessage(); }} 
-          disabled={!newMessage.trim() || isSending || isAiTyping} 
-          className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg active:scale-95"
-        >
-          送信
-        </button>
+      <div className="p-4 bg-gray-900/80 backdrop-blur-xl border-t border-gray-800/60 pb-8">
+        <form onSubmit={handleSend} className="max-w-2xl mx-auto flex items-end gap-2 bg-gray-800/40 p-2 rounded-2xl border border-gray-700/50 focus-within:border-indigo-500/50 transition-all">
+          <textarea
+            className="flex-1 bg-transparent border-none text-gray-200 p-2 text-sm focus:ring-0 resize-none outline-none placeholder-gray-600"
+            placeholder="メッセージを入力..."
+            rows={1}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
+          />
+          <button type="submit" disabled={!inputText.trim() || loading} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${inputText.trim() ? 'bg-indigo-600' : 'bg-gray-700 opacity-50'}`}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9-7-9-7V12H3v2h9v5z" />
+            </svg>
+          </button>
+        </form>
       </div>
     </div>
   )
