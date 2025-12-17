@@ -35,11 +35,13 @@ export default async function ChatsListPage() {
 
   if (!conversations || conversations.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <h1 className="text-xl font-bold mb-4">トーク一覧</h1>
-        <div className="bg-white p-8 rounded-lg shadow text-center">
-          <p className="text-gray-500 mb-4">まだ会話がありません。</p>
-          <Link href="/" className="text-blue-600 hover:underline">
+      // ダークテーマの背景を適用 (左右の余白も含む)
+      <div className="min-h-screen bg-gray-900 text-gray-200 p-4">
+        <h1 className="text-xl font-bold mb-4 text-indigo-400">トーク一覧</h1>
+        {/* カードもダークテーマに */}
+        <div className="bg-gray-800 p-8 rounded-lg shadow-lg text-center border border-gray-700">
+          <p className="text-gray-400 mb-4">まだ会話がありません。</p>
+          <Link href="/" className="text-indigo-400 hover:underline">
             トップページでマッチングする
           </Link>
         </div>
@@ -107,39 +109,64 @@ export default async function ChatsListPage() {
   // 表示部分 (UI)
   // ------------------------------------------------
   return (
-    <div className="min-h-screen bg-gray-50 max-w-2xl mx-auto border-x min-h-[100dvh]">
-      {/* ヘッダー */}
-      <header className="bg-white p-4 shadow-sm sticky top-0 z-10 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-800">トーク一覧</h1>
-        <Link href="/" className="text-sm text-blue-600">トップへ戻る</Link>
-      </header>
+    // 修正: min-h-screen bg-gray-900 で画面全体を統一
+    <div className="min-h-screen bg-gray-900 text-gray-200 min-h-[100dvh]">
+      
+      {/* メインコンテンツラッパー: max-w-2xl mx-auto で中央寄せし、左右に枠線を表示 */}
+      <div className="max-w-2xl mx-auto border-x border-gray-700 min-h-full bg-gray-900">
 
-      {/* リスト表示 */}
-      <div className="divide-y divide-gray-200 bg-white">
-        {chatList.map((chat: ChatPreview) => (
-          <Link 
-            key={chat.conversationId} 
-            href={`/chats/${chat.conversationId}`} 
-            className="block hover:bg-gray-50 transition-colors"
-          >
-            {/* py-0 を維持し、height: 42px をインラインで強制 */}
-            <div 
-              className="flex items-center gap-4 py-0 px-4"
-              style={{ height: '42px' }} 
+        {/* ヘッダー: ダークテーマ */}
+        <header className="bg-gray-800 p-4 shadow-xl sticky top-0 z-10 flex items-center justify-between border-b border-gray-700">
+          <h1 className="text-xl font-bold text-indigo-400">トーク一覧</h1>
+          <Link href="/" className="text-sm text-gray-400 hover:text-indigo-400">トップへ戻る</Link>
+        </header>
+
+        {/* リスト表示: ダークテーマ */}
+        <div className="divide-y divide-gray-700">
+          {chatList.map((chat: ChatPreview) => (
+            <Link 
+              key={chat.conversationId} 
+              href={`/chats/${chat.conversationId}`} 
+              // ホバー時の色もダークテーマに
+              className="block hover:bg-gray-800 transition-colors"
             >
-              
-              {/* アイコン w-10 h-10 に維持 */}
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                <span className="text-blue-600 font-bold text-lg leading-none">{chat.partnerName.slice(0, 1)}</span>
-              </div>{/* */}
+              {/* 修正: 縦パディングを py-1 に減らす */}
+              <div className="flex items-start gap-4 py-1 px-4">
+                
+                {/* アイコン w-10 h-10 に維持, 色をダークテーマに */}
+                <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 mt-1">
+                  <span className="text-indigo-400 font-bold text-lg leading-none">{chat.partnerName.slice(0, 1)}</span>
+                </div>
+                  
+                {/* テキストコンテナ (Flex Columnで縦に要素を並べる) */}
+                <div className="flex-1 min-w-0 flex flex-col gap-1"> 
+                    
+                    {/* 1行目: 相手の名前と相性度 */}
+                  <div className="flex justify-start items-center gap-2"> 
+                        {/* 名前 (truncate を削除) */}
+                        <div className="text-base font-bold text-gray-200 m-0 p-0 leading-tight flex-shrink-0">{chat.partnerName}</div>
+                        {/* 相性度 */}
+                        {chat.similarity !== null && (<span className="text-xs text-green-300 font-bold bg-green-900 px-1 py-0 rounded-full shrink-0 whitespace-nowrap leading-tight border border-green-500/50">相性 {(chat.similarity * 100).toFixed(0)}%</span>)}
+                    </div>
+                    
+                    {/* 2行目: 最終メッセージ (複数行を許可) */}
+                    <div className="mt-0 min-w-0">
+                        {/* truncate を削除し、line-clamp-2 で最大2行表示を維持 */}
+                        <p className="text-sm text-gray-400 m-0 leading-snug whitespace-normal line-clamp-2">{chat.lastMessage}</p>
+                    </div>
 
-              {/* テキストコンテナは JSX 記述を詰め、gap-px を維持 */}
-              <div className="flex-1 min-w-0 flex flex-col gap-px"> 
-                <div className="flex justify-between items-center"><div className="flex items-center gap-2"><div className="text-base font-bold text-gray-900 truncate m-0 p-0 leading-none">{chat.partnerName}</div>{chat.similarity !== null && (<span className="text-xs text-green-700 font-bold bg-green-100 px-1 py-0 rounded-full shrink-0 whitespace-nowrap leading-none">相性 {(chat.similarity * 100).toFixed(0)}%</span>)}</div>{chat.lastMessageDate && (<span className="text-xs text-gray-400 shrink-0">{new Date(chat.lastMessageDate).toLocaleDateString()}</span>)}</div><div className="flex items-center gap-2 mt-0 min-w-0"><p className="text-sm text-gray-500 truncate flex-1 m-0 leading-none">{chat.lastMessage}</p></div>
+                    {/* 3行目: 日付 (右寄せで独立した行に配置) */}
+                    {chat.lastMessageDate && (
+                        <div className="w-full text-right">
+                            <span className="text-xs text-gray-500 shrink-0 whitespace-nowrap">{new Date(chat.lastMessageDate).toLocaleDateString()}</span>
+                        </div>
+                    )}
+
+                </div>
               </div>
-            </div>
-          </Link>
-        ))}
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-// ChatRoom.tsx
+// components/ChatRoom.tsx
 
 'use client'
 
@@ -22,7 +22,8 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   ))
 
-  if (!conversationId) return <div className="text-red-500 p-4">エラー: 会話IDなし</div>
+  // 修正: エラーメッセージのテーマを統一
+  if (!conversationId) return <div className="text-red-400 bg-gray-900 p-4">エラー: 会話IDなし</div>
   
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -131,33 +132,34 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
   }
 
   return (
-    <div className="border rounded-lg p-4 w-full max-w-md bg-white flex flex-col h-[500px]">
+    <div className="border border-gray-700 rounded-lg p-4 w-full max-w-md bg-gray-800 flex flex-col h-[500px] shadow-2xl">
       {/* メッセージリストのコンテナ: コンパクトな間隔を維持 (space-y-1) */}
       <div className="flex-1 overflow-y-auto mb-2 space-y-1 pr-2">
         {messages.map((msg) => {
           const isMyMessage = msg.sender_id === currentUserId;
           const timeString = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-          // スタイル決定ロジック
-          let bubbleClasses = 'bg-gray-100 text-gray-800 rounded-bl-none';
+          // スタイル決定ロジック (ダークテーマ対応)
+          let bubbleClasses = 'bg-gray-700 text-gray-200 rounded-bl-none'; // 相手のメッセージ
           if (isMyMessage) {
-            bubbleClasses = 'bg-blue-500 text-white rounded-br-none';
+            bubbleClasses = 'bg-indigo-600 text-white rounded-br-none'; // 自分のメッセージ
             if (msg.hasError) {
-              bubbleClasses = 'bg-red-500 text-white rounded-br-none opacity-80'; 
+              bubbleClasses = 'bg-red-600 text-white rounded-br-none opacity-80'; // エラー時
             } else if (msg.isSending) {
-              bubbleClasses = 'bg-blue-400 text-white rounded-br-none opacity-60'; 
+              bubbleClasses = 'bg-indigo-400 text-white rounded-br-none opacity-60'; // 送信中
             }
           }
 
           return (
             <div key={msg.id} className={`flex flex-col max-w-[85%] ${isMyMessage ? 'ml-auto items-end' : 'mr-auto items-start'}`}>
-              {/* メッセージバルーン: コンパクトなパディング (px-3 py-1) を維持 */}
+              {/* メッセージバルーン: コンパクトなパディング (px-3 py-1) を維持 */}
               <div className={`px-3 py-1 rounded-2xl text-sm break-words shadow-sm ${bubbleClasses}`}>
                 {msg.content}
               </div>
-              <span className="text-xs text-gray-400 mt-0.5 px-1 flex items-center gap-1">
-                {msg.hasError && <span className="text-red-500 font-bold">⚠️</span>}
-                {msg.isSending && <span className="text-blue-500 animate-pulse">...</span>}
+              {/* タイムスタンプ: 色をダークテーマに */}
+              <span className="text-xs text-gray-500 mt-0.5 px-1 flex items-center gap-1">
+                {msg.hasError && <span className="text-red-400 font-bold">⚠️</span>}
+                {msg.isSending && <span className="text-indigo-400 animate-pulse">...</span>}
                 {timeString}
               </span>
             </div>
@@ -166,12 +168,13 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
         <div ref={messagesEndRef} />
       </div>
       
-      <div className="flex items-center gap-2 pt-2 border-t">
+      {/* 入力エリア */}
+      <div className="flex items-center gap-2 pt-2 border-t border-gray-700">
         <input 
           type="text" 
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          className="border flex-1 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border border-gray-700 bg-gray-900 text-gray-200 flex-1 p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-500"
           placeholder="メッセージを入力..."
           onKeyDown={(e) => { 
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
@@ -180,11 +183,11 @@ export default function ChatRoom({ conversationId, currentUserId }: { conversati
                 }
             }}
         />
-        {/* 🚨 最終安定化修正: h-full/leading-noneを削除し、px-3 py-2で入力欄の高さに合わせる */}
+        {/* 修正: 送信ボタンをインディゴテーマに */}
         <button 
             onClick={sendMessage} 
             disabled={!newMessage.trim()} 
-            className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-bold"
+            className="bg-indigo-600 text-white px-3 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors font-bold"
         >
             送信
         </button>

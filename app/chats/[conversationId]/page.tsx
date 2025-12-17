@@ -1,3 +1,5 @@
+// app\chats\[conversationId]\page.tsx
+
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
@@ -42,7 +44,7 @@ export default async function ChatPage(props: PageProps) {
 
   // IDがない場合のエラー処理
   if (!conversationId) {
-    return <div className="p-8 text-red-500">エラー: 会話IDが見つかりません</div>
+    return <div className="p-8 text-red-500 bg-gray-900 min-h-screen text-gray-200">エラー: 会話IDが見つかりません</div>
   }
   
   const finalConversationId = conversationId;
@@ -68,21 +70,24 @@ export default async function ChatPage(props: PageProps) {
   // ---------------------------------------------------------
 
   return (
-    <div className="container mx-auto max-w-2xl min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-900 text-gray-200">
       
-      {/* ChatHeader */}
-      {partnerId ? (<ChatHeader partnerId={partnerId} currentUserId={currentUserId} />) : (
-        <div className="bg-white p-4 border-b"><h1 className="font-bold">チャット</h1></div>
-      )}{/* */}
+      {/* メインチャットコンテナ: 中央寄せと枠線を設定 */}
+      <div className="container mx-auto max-w-2xl min-h-screen flex flex-col border-x border-gray-700 bg-gray-900">
+      
+        {/* ChatHeader (テーマはコンポーネント内で定義されているはずですが、ここではラッパーとして配置) */}
+        {partnerId ? (<ChatHeader partnerId={partnerId} currentUserId={currentUserId} />) : (
+          <div className="bg-gray-800 p-4 border-b border-gray-700"><h1 className="font-bold text-indigo-400">チャット</h1></div>
+        )}{/* */}
 
-      {/* メインのチャットエリア (ID表示 div を削除) */}
-      <div className="flex-1 overflow-hidden flex flex-col p-4">
-        {/* 🚨 削除: Room IDの表示 div を完全に削除しました */}
-
-        <ChatRoom 
-          conversationId={finalConversationId} 
-          currentUserId={user.id} 
-        />
+        {/* メインのチャットエリア */}
+        <div className="flex-1 overflow-hidden flex flex-col p-4">
+          
+          <ChatRoom 
+            conversationId={finalConversationId} 
+            currentUserId={user.id} 
+          />
+        </div>
       </div>
     </div>
   )

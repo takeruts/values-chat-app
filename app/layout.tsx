@@ -8,8 +8,8 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "価値観マッチング | つながりを見つけよう",
-  description: "自分の価値観を共有して、心が通じ合える人との出会いを探す",
+  title: "カチピ｜価値観の近いピープルとつながろう",
+  description: "眠れない夜に気持ちをつぶやいて、心が通じ合える人との出会いを探す",
   generator: "v0.app",
   icons: {
     icon: [
