@@ -49,7 +49,7 @@ export default function LoginPage() {
 
       {/* ログインカード */}
       <div className="bg-gray-900/40 backdrop-blur-xl p-8 rounded-[2.5rem] border border-gray-800 shadow-2xl w-full max-w-sm">
-        <h2 className="text-lg font-bold mb-8 text-center text-gray-100">扉をひらく</h2>
+        <h2 className="text-lg font-bold mb-8 text-center text-gray-100">眠れない夜は価値観共有</h2>
         
         <div className="space-y-4">
           <div>
