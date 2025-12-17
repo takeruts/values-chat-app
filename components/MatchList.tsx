@@ -1,119 +1,116 @@
-// components/MatchList.tsx 
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr' 
 
-// マッチングデータの型定義
 type Match = {
-  id: number
-  content: string
-  similarity: number
-  nickname: string
-  user_id: string
+  id: number
+  content: string
+  similarity: number
+  nickname: string
+  user_id: string
 }
 
-// Propsの型定義
-type MatchListProps = {
-  matches: Match[]
-  currentUserId?: string
-}
+export default function MatchList({ 
+  matches, 
+  currentUserId 
+}: { 
+  matches: Match[], 
+  currentUserId?: string 
+}) {
+  const router = useRouter()
+  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const AI_USER_ID = '00000000-0000-0000-0000-000000000000'; 
 
-export default function MatchList({ matches, currentUserId }: MatchListProps) {
-  const router = useRouter()
-  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
-  // クライアントサイドのSupabaseインスタンスを作成
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const sortedMatches = useMemo(() => {
+    let list = [...(matches || [])];
+    if (!list.some(m => m.user_id === AI_USER_ID)) {
+      list.push({
+        id: -1,
+        user_id: AI_USER_ID,
+        nickname: 'のぞみ (AI)',
+        content: 'あなたの心に寄り添い、お話をお聞きします。',
+        similarity: 1.0, 
+      });
+    }
+    return list.sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity));
+  }, [matches]);
 
-  const handleStartChat = async (targetUserId: string) => {
-    if (loadingId) return
-    
-    if (!currentUserId) {
-        alert('チャットを開始するにはログインが必要です。');
-        router.push('/login');
-        return;
-    }
+  const handleStartChat = async (targetUserId: string) => {
+    if (loadingId || !currentUserId) return
+    setLoadingId(targetUserId)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const res = await fetch('/api/create_room', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${sessionData.session?.access_token}` 
+        },
+        body: JSON.stringify({ partnerId: targetUserId }),
+      })
+      const apiData = await res.json()
+      router.push(`/chats/${apiData.conversationId}`)
+    } catch (e) { 
+      alert('エラーが発生しました') 
+    } finally { 
+      setLoadingId(null) 
+    }
+  }
 
-    try {
-      setLoadingId(targetUserId)
-      
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
+  return (
+    <div className="flex flex-col gap-10">
+      {sortedMatches.map((match) => {
+        const isSelf = currentUserId === match.user_id;
+        const isAI = match.user_id === AI_USER_ID;
+        return (
+          <div 
+            key={match.user_id} 
+            className={`border rounded-2xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-gray-800/50 backdrop-blur-sm shadow-xl transition-colors ${
+              isAI ? 'border-indigo-500/30' : 'border-gray-700/50 hover:border-gray-600'
+            }`}
+          >
+            <div className="flex-1 min-w-0 text-left">
+              <div className="flex items-center gap-3 mb-2">
+                <h3 className={`text-base font-bold ${isAI ? 'text-indigo-300' : 'text-gray-100'}`}>
+                  {isAI ? 'のぞみ (AI)' : (match.nickname || '名無しさん')}
+                </h3>
+                {!isAI && (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter">
+                    相性 {(match.similarity * 100).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">
+                {match.content || 'よろしくお願いします。'}
+              </p>
+            </div>
 
-      if (!token) {
-          alert('セッション切れです。再ログインしてください。');
-          router.push('/login');
-          return;
-      }
-
-      const res = await fetch('/api/create_room', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ partnerId: targetUserId }),
-      })
-
-      if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || '会話ルームの作成に失敗しました')
-      }
-
-      const apiData = await res.json()
-      const conversationId = apiData.conversationId
-
-      router.push(`/chats/${conversationId}`)
-
-    } catch (error: any) {
-      console.error('Error starting chat:', error)
-      alert(error.message || 'エラーが発生しました。もう一度お試しください。')
-    } finally {
-      setLoadingId(null)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {matches.length === 0 && (
-        <p className="text-gray-500 text-center">マッチする相手が見つかりませんでした。</p>
-      )}
-
-      {matches.map((match) => {
-        const isSelf = currentUserId === match.user_id;
-
-        return (
-          <div 
-            key={match.user_id} 
-            className="border rounded-lg p-4 bg-white shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
-          >{/* 🚨 修正: 最外層 div 開始タグ直後の空白を排除 */}
-            {/* 左側：相手の情報 */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-baseline gap-2">
-                {/* ニックネームと相性度を一行で表示 */}
-                <h3 className="text-lg font-bold text-gray-800 inline-block whitespace-nowrap">{match.nickname || '名無しさん'}</h3>{isSelf && <span className="text-xs text-blue-500 ml-2">(あなた)</span>}<span className="text-xs text-green-700 font-bold bg-green-100 px-2 py-0.5 rounded-full whitespace-nowrap">相性 {(match.similarity * 100).toFixed(0)}%</span>
-              </div>{/* */}
-            </div>{/* 🚨 修正: Flexアイテム間の閉じタグ直後にコメントを挿入 */}
-
-            {/* 右側：アクションボタン */}
-            {!isSelf && (
-              <button
-                onClick={() => handleStartChat(match.user_id)}
-                disabled={loadingId !== null}
-                className={`px-6 py-2 rounded-full text-white font-medium transition-all shrink-0 ${loadingId === match.user_id 
-                    ? 'bg-gray-400 cursor-wait' 
-                    : 'bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg'
-                  }`}
-              >{loadingId === match.user_id ? '準備中...' : '話してみたい'}</button>
-            )}{/* 🚨 修正: 最後の要素の後にコメントを挿入し、改行を吸収 */}
-          </div>
-        )
-      })}
-    </div>
-  )
+            {!isSelf && (
+              <button 
+                onClick={() => handleStartChat(match.user_id)} 
+                disabled={loadingId !== null} 
+                className={`px-10 py-3.5 rounded-xl text-xs font-black transition-all active:scale-95 min-w-[140px] tracking-widest ${
+                  loadingId === match.user_id 
+                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                    : isAI 
+                      ? 'bg-indigo-600/90 text-indigo-50 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20' 
+                      /* 🚨 修正：夜らしい「深い青緑」と「繊細なボーダー」の配色に変更 */
+                      : 'bg-slate-700 text-cyan-100 hover:bg-slate-600 border border-cyan-500/30 shadow-lg shadow-black/40'
+                }`}
+              >
+                {loadingId === match.user_id ? '...' : isAI ? '相談する' : '話してみる'}
+              </button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
 }

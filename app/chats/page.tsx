@@ -3,171 +3,155 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 
-// 表示用の型定義
 type ChatPreview = {
-  conversationId: string
-  partnerName: string
-  lastMessage: string
-  lastMessageDate: string | null
-  partnerId: string
-  similarity: number | null 
+  conversationId: string
+  partnerName: string
+  lastMessage: string
+  lastMessageDate: string | null
+  partnerId: string
+  similarity: number | null 
 }
 
+const AI_USER_ID = '00000000-0000-0000-0000-000000000000';
+
 export default async function ChatsListPage() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { get: (name) => cookieStore.get(name)?.value } }
-  )
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { get: (name) => cookieStore.get(name)?.value } }
+  )
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    redirect('/login')
-  }
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    redirect('/login')
+  }
 
-  // 1. 自分が参加している会話ルームを取得
-  const { data: conversations } = await supabase
-    .from('conversations')
-    .select('*')
-    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
-    .order('created_at', { ascending: false })
+  const { data: conversations } = await supabase
+    .from('conversations')
+    .select('*')
+    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+    .order('created_at', { ascending: false })
 
-  if (!conversations || conversations.length === 0) {
-    return (
-      // ダークテーマの背景を適用 (左右の余白も含む)
-      <div className="min-h-screen bg-gray-900 text-gray-200 p-4">
-        <h1 className="text-xl font-bold mb-4 text-indigo-400">トーク一覧</h1>
-        {/* カードもダークテーマに */}
-        <div className="bg-gray-800 p-8 rounded-lg shadow-lg text-center border border-gray-700">
-          <p className="text-gray-400 mb-4">まだ会話がありません。</p>
-          <Link href="/" className="text-indigo-400 hover:underline">
-            トップページでマッチングする
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  if (!conversations || conversations.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-900 text-gray-200 p-8 flex flex-col items-center justify-center">
+        <div className="bg-gray-800/50 backdrop-blur-sm p-12 rounded-3xl shadow-2xl text-center border border-gray-700/50 max-w-md w-full">
+          <p className="text-gray-400 mb-6 font-medium">まだ会話がありません。</p>
+          <Link href="/" className="inline-block bg-indigo-600 text-white px-8 py-3 rounded-xl font-black hover:bg-indigo-500 transition active:scale-95 shadow-lg shadow-indigo-900/20">
+            仲間を探しにいく
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
-  // 2. 各会話について「相手の名前」「最後のメッセージ」「相性度」を取得
-  const chatList = await Promise.all(
-    conversations.map(async (conv): Promise<ChatPreview> => {
-      // 相手のIDを特定
-      const partnerId = conv.user_a_id === user.id ? conv.user_b_id : conv.user_a_id
+  const chatList = await Promise.all(
+    conversations.map(async (conv): Promise<ChatPreview> => {
+      const partnerId = conv.user_a_id === user.id ? conv.user_b_id : conv.user_a_id
+      const { data: profile } = await supabase.from('profiles').select('nickname').eq('id', partnerId).maybeSingle() 
+      const partnerName = profile?.nickname || '名無しさん'
 
-      // A. 相手のニックネーム取得
-      const { data: profile } = await supabase
-        .from('profiles') 
-        .select('nickname')
-        .eq('id', partnerId)
-        .maybeSingle() 
-      
-      const partnerName = profile?.nickname || '名無しさん'
+      let similarityScore: number | null = null;
+      try {
+          const { data: similarityData, error: similarityError } = await supabase.rpc('get_similarity_between_users', {
+              user_a_id: user.id, user_b_id: partnerId,
+          });
+          if (!similarityError && similarityData && similarityData.length > 0 && similarityData[0].similarity !== null) {
+              similarityScore = parseFloat(String(similarityData[0].similarity));
+          }
+      } catch (e) { console.error(e); }
 
-      // 🚨 相性度を取得するための RPC 呼び出しを復元
-      let similarityScore: number | null = null;
-      try {
-          const { data: similarityData, error: similarityError } = await supabase.rpc('get_similarity_between_users', {
-              user_a_id: user.id, user_b_id: partnerId,
-          });
+      const { data: lastMsg } = await supabase.from('messages').select('content, created_at').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
 
-          if (!similarityError && similarityData && similarityData.length > 0 && similarityData[0].similarity !== null) {
-              similarityScore = parseFloat(String(similarityData[0].similarity));
-          }
-      } catch (e) {
-          console.error("相性度の取得に失敗しました:", e);
-      }
+      return {
+        conversationId: conv.id,
+        partnerName,
+        partnerId,
+        lastMessage: lastMsg?.content || '（メッセージはまだありません）',
+        lastMessageDate: lastMsg?.created_at || null,
+        similarity: similarityScore,
+      }
+    })
+  )
 
-      // B. 最後のメッセージ取得
-      const { data: lastMsg } = await supabase
-        .from('messages')
-        .select('content, created_at')
-        .eq('conversation_id', conv.id)
-        .order('created_at', { ascending: false }) // 新しい順
-        .limit(1)
-        .maybeSingle()
+  chatList.sort((a, b) => {
+    if (a.partnerId === AI_USER_ID) return -1;
+    if (b.partnerId === AI_USER_ID) return 1;
+    const dateA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+    const dateB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+    return dateB - dateA;
+  })
 
-      return {
-        conversationId: conv.id,
-        partnerName,
-        partnerId,
-        lastMessage: lastMsg?.content || '（メッセージはまだありません）',
-        lastMessageDate: lastMsg?.created_at || null,
-        similarity: similarityScore, // 👈 復元
-      }
-    })
-  )
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-200">
+      <div className="max-w-2xl mx-auto min-h-screen flex flex-col">
 
-  // 3. メッセージが新しい順に並べ替え
-  chatList.sort((a, b) => {
-    if (!a.lastMessageDate) return 1
-    if (!b.lastMessageDate) return -1
-    return new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime()
-  })
+        <header className="bg-gray-800/80 backdrop-blur-md border-b border-gray-700/50 py-4 px-6 flex items-center justify-between sticky top-0 z-50">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-gray-400 hover:text-indigo-400 transition-colors p-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </Link>
+            <h2 className="font-black text-xl text-indigo-400 tracking-tight">トーク一覧</h2>
+          </div>
+          <span className="text-[10px] bg-gray-900 px-2 py-1 rounded text-gray-500 font-mono tracking-widest">{chatList.length} CHATS</span>
+        </header>
 
-  // ------------------------------------------------
-  // 表示部分 (UI)
-  // ------------------------------------------------
-  return (
-    // 修正: min-h-screen bg-gray-900 で画面全体を統一
-    <div className="min-h-screen bg-gray-900 text-gray-200 min-h-[100dvh]">
-      
-      {/* メインコンテンツラッパー: max-w-2xl mx-auto で中央寄せし、左右に枠線を表示 */}
-      <div className="max-w-2xl mx-auto border-x border-gray-700 min-h-full bg-gray-900">
-
-        {/* ヘッダー: ダークテーマ */}
-        <header className="bg-gray-800 p-4 shadow-xl sticky top-0 z-10 flex items-center justify-between border-b border-gray-700">
-          <h1 className="text-xl font-bold text-indigo-400">トーク一覧</h1>
-          <Link href="/" className="text-sm text-gray-400 hover:text-indigo-400">トップへ戻る</Link>
-        </header>
-
-        {/* リスト表示: ダークテーマ */}
-        <div className="divide-y divide-gray-700">
-          {chatList.map((chat: ChatPreview) => (
-            <Link 
-              key={chat.conversationId} 
-              href={`/chats/${chat.conversationId}`} 
-              // ホバー時の色もダークテーマに
-              className="block hover:bg-gray-800 transition-colors"
-            >
-              {/* 修正: 縦パディングを py-1 に減らす */}
-              <div className="flex items-start gap-4 py-1 px-4">
-                
-                {/* アイコン w-10 h-10 に維持, 色をダークテーマに */}
-                <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0 mt-1">
-                  <span className="text-indigo-400 font-bold text-lg leading-none">{chat.partnerName.slice(0, 1)}</span>
-                </div>
-                  
-                {/* テキストコンテナ (Flex Columnで縦に要素を並べる) */}
-                <div className="flex-1 min-w-0 flex flex-col gap-1"> 
+        <main className="p-4 md:p-6 space-y-4">
+          {chatList.map((chat: ChatPreview) => {
+            const isAI = chat.partnerId === AI_USER_ID;
+            return (
+              <Link 
+                key={chat.conversationId} 
+                href={`/chats/${chat.conversationId}`} 
+                className={`group block p-5 rounded-2xl border transition-all duration-300 shadow-xl ${
+                  isAI 
+                    ? 'bg-indigo-900/10 border-indigo-500/30 hover:bg-indigo-900/20' 
+                    : 'bg-gray-800/40 border-gray-700/50 hover:bg-gray-800/60 hover:border-gray-600'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner transition-transform group-hover:scale-105 ${
+                    isAI ? 'bg-indigo-800/50 border border-indigo-400/30' : 'bg-gray-900 border border-gray-700'
+                  }`}>
+                    <span className={`${isAI ? 'text-2xl' : 'text-xl font-black text-indigo-400 opacity-80'}`}>
+                      {isAI ? '✨' : chat.partnerName.slice(0, 1)}
+                    </span>
+                  </div>
                     
-                    {/* 1行目: 相手の名前と相性度 */}
-                  <div className="flex justify-start items-center gap-2"> 
-                        {/* 名前 (truncate を削除) */}
-                        <div className="text-base font-bold text-gray-200 m-0 p-0 leading-tight flex-shrink-0">{chat.partnerName}</div>
-                        {/* 相性度 */}
-                        {chat.similarity !== null && (<span className="text-xs text-green-300 font-bold bg-green-900 px-1 py-0 rounded-full shrink-0 whitespace-nowrap leading-tight border border-green-500/50">相性 {(chat.similarity * 100).toFixed(0)}%</span>)}
-                    </div>
-                    
-                    {/* 2行目: 最終メッセージ (複数行を許可) */}
-                    <div className="mt-0 min-w-0">
-                        {/* truncate を削除し、line-clamp-2 で最大2行表示を維持 */}
-                        <p className="text-sm text-gray-400 m-0 leading-snug whitespace-normal line-clamp-2">{chat.lastMessage}</p>
+                  <div className="flex-1 min-w-0"> 
+                    <div className="flex justify-between items-center mb-1.5"> 
+                      <h3 className={`text-base font-black truncate tracking-tight ${isAI ? 'text-indigo-300' : 'text-gray-100'}`}>
+                        {chat.partnerName}
+                      </h3>
+                      
+                      {/* 🚨 修正：MatchListと統一した相性度バッジ */}
+                      {!isAI && chat.similarity !== null && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter shadow-sm">
+                          相性 {(chat.similarity * 100).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
 
-                    {/* 3行目: 日付 (右寄せで独立した行に配置) */}
-                    {chat.lastMessageDate && (
-                        <div className="w-full text-right">
-                            <span className="text-xs text-gray-500 shrink-0 whitespace-nowrap">{new Date(chat.lastMessageDate).toLocaleDateString()}</span>
-                        </div>
-                    )}
-
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
+                    <div className="flex justify-between items-end">
+                      <p className={`text-xs line-clamp-1 flex-1 pr-4 ${isAI ? 'text-indigo-200/40 italic' : 'text-gray-500'}`}>
+                        {chat.lastMessage}
+                      </p>
+                      {chat.lastMessageDate && (
+                        <span className="text-[10px] text-gray-600 font-mono shrink-0 italic opacity-60">
+                          {new Date(chat.lastMessageDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </main>
+      </div>
+    </div>
+  )
 }

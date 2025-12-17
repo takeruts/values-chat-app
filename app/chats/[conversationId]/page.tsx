@@ -1,94 +1,89 @@
-// app\chats\[conversationId]\page.tsx
-
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import ChatRoom from '@/components/ChatRoom' 
 import ChatHeader from '@/components/ChatHeader'
 
-// Next.js 15対応の型定義 (Promiseとして渡されることを許容)
 type PageProps = {
-  params: Promise<any> 
+  params: Promise<{ conversationId: string }> 
 }
 
-export default async function ChatPage(props: PageProps) {
-  // 1. params を待機 & ID取得ロジック
-  const params = await props.params; 
-  
-  // ID取得: フォルダ名 [conversationId] に対応するプロパティ名を使用
-  let conversationId = params.conversationId; 
-    
-    // 補足的なID取得ロジック (paramsの形式が揺れる場合に備えて残す)
-  if (!conversationId) {
-    const keys = Object.keys(params);
-    if (keys.length > 0) conversationId = params[keys[0]] || keys[0];
-  }
-  if (Array.isArray(conversationId)) conversationId = conversationId[0];
+export default async function ChatPage({ params }: PageProps) {
+  const resolvedParams = await params;
+  const conversationId = resolvedParams.conversationId;
 
-  // Supabaseクライアント作成
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { get: (name) => cookieStore.get(name)?.value } }
-  )
+  const cookieStore = await cookies()
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { get: (name) => cookieStore.get(name)?.value } }
+  )
 
-  // ログインユーザー確認
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    redirect('/login')
-  }
-  
-  // 自分のIDを確保
-  const currentUserId = user.id;
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    redirect('/login')
+  }
+  
+  const currentUserId = user.id;
 
-  // IDがない場合のエラー処理
-  if (!conversationId) {
-    return <div className="p-8 text-red-500 bg-gray-900 min-h-screen text-gray-200">エラー: 会話IDが見つかりません</div>
-  }
-  
-  const finalConversationId = conversationId;
+  if (!conversationId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-900 text-red-400 font-bold italic">
+        Error: Conversation ID not found.
+      </div>
+    )
+  }
 
-  // ---------------------------------------------------------
-  // 相手のIDを特定
-  // ---------------------------------------------------------
-  
-  // A. 会話の参加者を取得
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('user_a_id, user_b_id')
-    .eq('id', finalConversationId)
-    .single();
+  // 会話情報を取得して相手のIDを特定
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('user_a_id, user_b_id')
+    .eq('id', conversationId)
+    .single();
 
-  let partnerId = null;
+  const partnerId = conv 
+    ? (conv.user_a_id === currentUserId ? conv.user_b_id : conv.user_a_id)
+    : null;
 
-  if (conv) {
-    // B. 自分じゃない方のID（相手のID）を特定
-    partnerId = conv.user_a_id === user.id ? conv.user_b_id : conv.user_a_id;
-  }
-  
-  // ---------------------------------------------------------
+  return (
+    <div className="min-h-screen bg-gray-950 text-gray-200">
+      {/* 🚨 コンテナ設計：
+         max-w-2xl で幅を制限し、border-x でサイドに境界を作ることで、
+         情報の密度を高め、夜の集中できる空間を演出します。
+      */}
+      <div className="mx-auto max-w-2xl min-h-screen flex flex-col border-x border-gray-800/60 bg-gray-900 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+      
+        {/* ヘッダーセクション */}
+        {partnerId ? (
+          <ChatHeader 
+            partnerId={partnerId} 
+            currentUserId={currentUserId} 
+          />
+        ) : (
+          <header className="bg-gray-800/50 backdrop-blur-md p-4 border-b border-gray-800 h-16 flex items-center justify-center">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+              <span className="text-xs font-bold text-gray-500 tracking-widest uppercase italic">Connecting...</span>
+            </div>
+          </header>
+        )}
 
-  return (
-    <div className="min-h-screen bg-gray-900 text-gray-200">
-      
-      {/* メインチャットコンテナ: 中央寄せと枠線を設定 */}
-      <div className="container mx-auto max-w-2xl min-h-screen flex flex-col border-x border-gray-700 bg-gray-900">
-      
-        {/* ChatHeader (テーマはコンポーネント内で定義されているはずですが、ここではラッパーとして配置) */}
-        {partnerId ? (<ChatHeader partnerId={partnerId} currentUserId={currentUserId} />) : (
-          <div className="bg-gray-800 p-4 border-b border-gray-700"><h1 className="font-bold text-indigo-400">チャット</h1></div>
-        )}{/* */}
-
-        {/* メインのチャットエリア */}
-        <div className="flex-1 overflow-hidden flex flex-col p-4">
-          
-          <ChatRoom 
-            conversationId={finalConversationId} 
-            currentUserId={user.id} 
-          />
-        </div>
-      </div>
-    </div>
-  )
+        {/* チャットエリア */}
+        <main className="flex-1 flex flex-col overflow-hidden relative">
+          {partnerId ? (
+            <ChatRoom 
+              conversationId={conversationId} 
+              currentUserId={currentUserId} 
+              partnerId={partnerId} 
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center space-y-4">
+               <div className="w-8 h-8 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+               <p className="text-[10px] text-gray-600 font-mono tracking-widest uppercase">Initializing Room</p>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  )
 }
