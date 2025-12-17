@@ -160,7 +160,7 @@ export default function Home() {
       {/* ヘッダー: 完全に単一行に圧縮し、縦長表示の原因となる空白ノードを排除 */}
       <header className="bg-gray-800 shadow-lg px-4 py-3 flex items-center justify-between sticky top-0 z-50 border-b border-gray-700 flex-nowrap">
         <div className="flex-1 min-w-0 pr-4">
-          <h1 className="text-lg md:text-xl font-bold text-indigo-400 truncate leading-tight">カチピ (夜モード)</h1>
+          <h1 className="text-lg md:text-xl font-bold text-indigo-400 truncate leading-tight">カチピ (ベータ版)</h1>
         </div>
         <div className="flex items-center gap-3 md:gap-6 shrink-0">
           {user ? (<>
