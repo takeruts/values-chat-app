@@ -151,7 +151,7 @@ export default async function ChatsListPage() {
                       
                       {!isAI && chat.similarity !== null && (
                         <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter shadow-sm">
-                          相性 {Math.round(chat.similarity * 100)}% 
+                          共感 {Math.round(chat.similarity * 100)}% 
                         </span>
                       )}
                       

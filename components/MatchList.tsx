@@ -61,7 +61,8 @@ export default function MatchList({
       });
     }
     return list.map(m => m.user_id === AI_USER_ID ? { ...m, nickname: aiName } : m)
-               .sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity));
+               .sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity))
+               .slice(0, 6);
   }, [matches, aiName]);
 
   const handleStartChat = async (targetUserId: string) => {
@@ -110,7 +111,7 @@ export default function MatchList({
                   </span>
                 ) : (
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter shadow-sm">
-                    相性 {(match.similarity * 100).toFixed(0)}%
+                    共感 {(match.similarity * 100).toFixed(0)}%
                   </span>
                 )}
               </div>

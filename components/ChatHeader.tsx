@@ -10,21 +10,36 @@ const AI_USER_ID = '00000000-0000-0000-0000-000000000000';
 export default function ChatHeader({ partnerId, currentUserId }: Props) {
   const [nickname, setNickname] = useState('');
   const [aiName, setAiName] = useState('');
-  const [similarity, setSimilarity] = useState<number | null>(null); 
+  const [similarity, setSimilarity] = useState<number | null>(null); // 🚨 共感度用ステート
 
   const supabase = createBrowserClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
   const isAI = partnerId === AI_USER_ID;
 
   useEffect(() => {
     if (!partnerId || !currentUserId) return
+    
     const fetchData = async () => {
       if (isAI) {
-        // 🚨 自分の設定からAIの名前と性別を取得
+        // AI設定の取得
         const { data } = await supabase.from('profiles').select('ai_gender, ai_name').eq('id', currentUserId).single()
         setAiName(data?.ai_name || (data?.ai_gender === 'male' ? 'かい' : 'のぞみ'))
       } else {
+        // ユーザー情報の取得
         const { data } = await supabase.from('profiles').select('nickname').eq('id', partnerId).single()
         if (data?.nickname) setNickname(data.nickname);
+
+        // 🚨 修正：共感度（Similarity）をRPC経由で取得
+        try {
+          const { data: simData } = await supabase.rpc('get_similarity_between_users', {
+            user_a_id: currentUserId,
+            user_b_id: partnerId
+          });
+          if (simData && simData.length > 0 && simData[0].similarity !== null) {
+            setSimilarity(parseFloat(String(simData[0].similarity)));
+          }
+        } catch (e) {
+          console.error("共感度取得失敗:", e);
+        }
       }
     }
     fetchData()
@@ -41,9 +56,23 @@ export default function ChatHeader({ partnerId, currentUserId }: Props) {
                 <h2 className={`font-black text-base md:text-lg leading-none truncate tracking-tight ${isAI ? 'text-indigo-400' : 'text-gray-100'}`}>
                   {isAI ? `${aiName}` : (nickname || '...')}
                 </h2>
-                {isAI && <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-400 border border-indigo-700/50 uppercase shrink-0">AI パートナー</span>}
+
+                {/* 🚨 修正：AIのときはバッジを表示、人間のときは「共感」を表示 */}
+                {isAI ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-400 border border-indigo-700/50 uppercase shrink-0">
+                    AI パートナー
+                  </span>
+                ) : (
+                  similarity !== null && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter shrink-0 shadow-sm">
+                      共感 {(similarity * 100).toFixed(0)}%
+                    </span>
+                  )
+                )}
             </div>
-            <p className="text-[10px] text-gray-500 font-medium leading-none mt-1.5 tracking-wider uppercase opacity-70">いつでもあなたの想いに寄り添います</p>
+            <p className="text-[10px] text-gray-500 font-medium leading-none mt-1.5 tracking-wider uppercase opacity-70">
+              {isAI ? 'いつでもあなたの想いに寄り添います' : '深い対話と共感の場所'}
+            </p>
         </div>
       </div>
     </div>
