@@ -21,7 +21,7 @@ export default function MatchList({
 }) {
   const router = useRouter()
   const [loadingId, setLoadingId] = useState<string | null>(null)
-  const [aiName, setAiName] = useState('のぞみ') // 🚨 追加：AI名用のステート
+  const [aiName, setAiName] = useState('のぞみ')
   const AI_USER_ID = '00000000-0000-0000-0000-000000000000'; 
 
   const supabase = createBrowserClient(
@@ -29,7 +29,6 @@ export default function MatchList({
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  // 🚨 自分の設定からAIパートナー名を取得
   useEffect(() => {
     if (!currentUserId) return
     const fetchAiSettings = async () => {
@@ -56,15 +55,14 @@ export default function MatchList({
       list.push({
         id: -1,
         user_id: AI_USER_ID,
-        nickname: `${aiName} (AI)`, // 🚨 修正：取得したAI名を反映
+        nickname: aiName, // ヘッダー等と合わせて (AI) はバッジ側で表現
         content: 'あなたの心に寄り添い、お話をお聞きします。',
         similarity: 1.0, 
       });
     }
-    // リスト内のAIの名前を最新の状態に更新
-    return list.map(m => m.user_id === AI_USER_ID ? { ...m, nickname: `${aiName} (AI)` } : m)
+    return list.map(m => m.user_id === AI_USER_ID ? { ...m, nickname: aiName } : m)
                .sort((a, b) => (a.user_id === AI_USER_ID ? -1 : b.user_id === AI_USER_ID ? 1 : b.similarity - a.similarity));
-  }, [matches, aiName]); // 🚨 aiNameが更新されたら再計算
+  }, [matches, aiName]);
 
   const handleStartChat = async (targetUserId: string) => {
     if (loadingId || !currentUserId) return
@@ -105,8 +103,13 @@ export default function MatchList({
                 <h3 className={`text-base font-bold ${isAI ? 'text-indigo-300' : 'text-gray-100'}`}>
                   {match.nickname}
                 </h3>
-                {!isAI && (
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter">
+                {/* 🚨 修正：AIのときは「AIパートナー」、それ以外は「相性度」を表示 */}
+                {isAI ? (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/50 text-indigo-400 border border-indigo-500/50 uppercase tracking-tighter shadow-sm">
+                    AIパートナー
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-indigo-900/30 text-indigo-300 border border-indigo-700/50 uppercase tracking-tighter shadow-sm">
                     相性 {(match.similarity * 100).toFixed(0)}%
                   </span>
                 )}

@@ -137,7 +137,7 @@ export default function Home() {
                   onClick={handleLogout} 
                   className="text-red-400 text-[10px] font-black border border-red-900/40 px-2 py-0.5 rounded bg-red-950/20 uppercase tracking-tighter"
                 >
-                  退出
+                  ログアウト
                 </button>
               </>
             ) : (
@@ -148,7 +148,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
-        <h2 className="text-xl md:text-2xl font-bold mb-8 text-center text-indigo-300 tracking-tight">眠れない夜のつぶやき</h2>
+        <h2 className="text-xl md:text-2xl font-bold mb-8 text-center text-indigo-300 tracking-tight">眠れない夜はつぶやいて、価値観の合うピープルを探しましょう</h2>
         
         {/* 投稿セクション */}
         <div className="bg-gray-800 p-5 md:p-8 rounded-2xl shadow-xl border border-gray-700">
@@ -164,7 +164,7 @@ export default function Home() {
 
           <textarea 
             className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600" 
-            placeholder="今の気持ちを自由に書き出してください。" 
+            placeholder="今の気持ち、好きなこと、いやなこと、などつぶやきましょう。あなたの価値観に共感できるピープルを探します。" 
             value={inputText} 
             onChange={(e) => setInputText(e.target.value)} 
           />
