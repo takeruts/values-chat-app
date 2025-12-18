@@ -116,7 +116,7 @@ export default async function ChatsListPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>
             </Link>
-            <h2 className="font-black text-xl text-indigo-400 tracking-tight">Messages</h2>
+            <h2 className="font-black text-xl text-indigo-400 tracking-tight">チャット一覧</h2>
           </div>
           <span className="text-[10px] bg-gray-800 px-3 py-1 rounded-full text-gray-500 font-mono tracking-widest border border-gray-700">{chatList.length} CHATS</span>
         </header>
