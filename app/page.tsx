@@ -6,6 +6,22 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MatchList from '@/components/MatchList'
 
+// 格言と著者をセットにしたデータ構造
+const PHILOSOPHY_QUOTES = [
+  { text: "人間は、他人のようになろうとして、自分の個性の半分を投げ捨てている。", author: "Arthur Schopenhauer" },
+  { text: "我々は、他の人々と同じようになろうとして、自分自身の4分の3を失う。", author: "Arthur Schopenhauer" },
+  { text: "幸福は、自分自身に満足している人々の中にある。", author: "Arthur Schopenhauer" },
+  { text: "富は海の水に似ている。飲めば飲むほど、喉が渇く。", author: "Arthur Schopenhauer" },
+  { text: "孤独を愛さない人間は、自由を愛さない人間である。", author: "Arthur Schopenhauer" },
+  { text: "礼儀とは、道徳的な欠陥を隠すための外套である。", author: "Arthur Schopenhauer" },
+  { text: "事実というものは存在しない。あるのは解釈だけだ。", author: "Friedrich Nietzsche" },
+  { text: "自分を破壊しないあらゆるものが、私をさらに強くする。", author: "Friedrich Nietzsche" },
+  { text: "あなたの魂の中にいる英雄を、見捨ててはならない。", author: "Friedrich Nietzsche" },
+  { text: "脱皮できない蛇は滅びる。意見を着替えさせられない精神も同様だ。", author: "Friedrich Nietzsche" },
+  { text: "高く登ろうとするならば、自分の足を使え。他人の背中に乗ってはならない。", author: "Friedrich Nietzsche" },
+  { text: "いつか空高く飛びたいと思う者は、まず地におり、立ち、歩き、走り、登り、踊ることを学ばなければならない。", author: "Friedrich Nietzsche" }
+];
+
 type Post = {
   id: string;
   content: string;
@@ -15,12 +31,15 @@ type Post = {
 export default function Home() {
   const [inputText, setInputText] = useState('')
   const [nickname, setNickname] = useState('') 
-  const [aiName, setAiName] = useState('のぞみ') // AI名の初期値
+  const [aiName, setAiName] = useState('のぞみ')
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [userPosts, setUserPosts] = useState<Post[]>([]) 
   const [postsLoading, setPostsLoading] = useState(true)
+  
+  // 格言オブジェクト用のステート
+  const [quoteObj, setQuoteObj] = useState({ text: '', author: '' })
 
   const router = useRouter()
   const supabase = createBrowserClient(
@@ -28,13 +47,8 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
-  /**
-   * 🚨 修正：DBから常に最新のプロフィール（ニックネーム・AI名・性別）と投稿を取得
-   */
   const fetchAllData = async (userId: string) => {
     setPostsLoading(true);
-    
-    // プロフィールから設定をすべて取得
     const { data: profile } = await supabase
       .from('profiles')
       .select('nickname, ai_name, ai_gender')
@@ -43,8 +57,6 @@ export default function Home() {
     
     if (profile) {
       if (profile.nickname) setNickname(profile.nickname)
-      
-      // AI名の決定ロジック：カスタム名 > 性別デフォルト > 固定デフォルト
       if (profile.ai_name) {
         setAiName(profile.ai_name)
       } else if (profile.ai_gender === 'male') {
@@ -65,6 +77,10 @@ export default function Home() {
   }
 
   useEffect(() => {
+    // マウント時にランダムな格言オブジェクトを選択
+    const randomIndex = Math.floor(Math.random() * PHILOSOPHY_QUOTES.length);
+    setQuoteObj(PHILOSOPHY_QUOTES[randomIndex]);
+
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -104,7 +120,6 @@ export default function Home() {
       const data = await res.json()
       if (res.ok) {
         setMatches(data.matches)
-        // 🚨 保存後、最新のAI名を再取得して画面を更新
         await fetchAllData(user.id);
       }
     } catch (error: any) {
@@ -148,7 +163,21 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
-        <h2 className="text-xl md:text-2xl font-bold mb-8 text-center text-indigo-300 tracking-tight">眠れない夜はつぶやいて、価値観の合うピープルを探しましょう</h2>
+        
+        {/* 格言セクション：著者名付き */}
+        <div className="mb-12 py-8 text-center border-y border-gray-800/50 bg-gray-800/20 rounded-3xl">
+          <p className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mb-4 opacity-70">Deep Insight</p>
+          <p className="text-sm md:text-base text-gray-300 font-serif leading-relaxed px-8 italic">
+            「 {quoteObj.text} 」
+          </p>
+          <p className="text-[10px] text-indigo-400/60 mt-4 tracking-widest font-medium">
+            — {quoteObj.author}
+          </p>
+        </div>
+
+        <h2 className="text-xl md:text-2xl font-bold mb-8 text-center text-indigo-300 tracking-tight">
+          眠れない夜はつぶやいて、価値観の合うピープルを探しましょう
+        </h2>
         
         {/* 投稿セクション */}
         <div className="bg-gray-800 p-5 md:p-8 rounded-2xl shadow-xl border border-gray-700">
@@ -174,12 +203,11 @@ export default function Home() {
             disabled={loading || !nickname}
             className="w-full mt-8 bg-indigo-600 text-white font-black h-16 rounded-2xl shadow-xl hover:bg-indigo-500 transition active:scale-95 disabled:bg-gray-700 disabled:text-gray-500 text-base flex items-center justify-center tracking-widest"
           >
-            {/* 🚨 修正：ここが設定した名前に切り替わります */}
             {loading ? `${aiName} (AIパートナー)が分析中...` : 'つぶやいてカチピ（仲間）を探す'}
           </button>
         </div>
 
-        {/* スペーサー：適度な隙間 */}
+        {/* スペーサー */}
         <div className="h-12"></div>
 
         {/* マッチング結果 */}
@@ -190,7 +218,6 @@ export default function Home() {
           <MatchList matches={matches} currentUserId={user?.id} />
         </div>
         
-        {/* 区切り線スペーサー */}
         <div className="py-12">
           <div className="border-t border-gray-800 w-full opacity-30"></div>
         </div>
