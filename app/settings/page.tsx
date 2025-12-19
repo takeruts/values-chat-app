@@ -27,14 +27,13 @@ export default function SettingsPage() {
         return
       }
       
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('nickname, ai_gender, ai_name')
         .eq('id', user.id)
         .single()
 
       if (data) {
-        // 🚨 既存データがある場合のみステートを更新。nullの場合はデフォルト値を維持
         if (data.nickname) setNickname(data.nickname)
         if (data.ai_gender) setAiGender(data.ai_gender as 'female' | 'male')
         if (data.ai_name) setAiName(data.ai_name)
@@ -52,13 +51,14 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('認証エラー')
 
-      // 🚨 upsert処理。カラム名がDBと完全一致している必要があります
+      // 🚨 upsert処理：emailも含めて保存
       const { error } = await supabase
         .from('profiles')
         .upsert({ 
           id: user.id, 
+          email: user.email, // 🚨 ここでAuthから取得したメールアドレスを profiles に保存
           nickname: nickname.trim(),
-          ai_name: aiName.trim(), // 🚨 DBのカラム名が ai_name であることを確認してください
+          ai_name: aiName.trim(),
           ai_gender: aiGender,
           updated_at: new Date().toISOString()
         })
@@ -75,7 +75,11 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center"><div className="w-6 h-6 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div></div>
+  if (loading) return (
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-200 font-sans">

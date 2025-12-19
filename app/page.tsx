@@ -6,22 +6,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MatchList from '@/components/MatchList'
 
-// 格言と著者をセットにしたデータ構造
-const PHILOSOPHY_QUOTES = [
-  { text: "人間は、他人のようになろうとして、自分の個性の半分を投げ捨てている。", author: "Arthur Schopenhauer" },
-  { text: "我々は、他の人々と同じようになろうとして、自分自身の4分の3を失う。", author: "Arthur Schopenhauer" },
-  { text: "幸福は、自分自身に満足している人々の中にある。", author: "Arthur Schopenhauer" },
-  { text: "富は海の水に似ている。飲めば飲むほど、喉が渇く。", author: "Arthur Schopenhauer" },
-  { text: "孤独を愛さない人間は、自由を愛さない人間である。", author: "Arthur Schopenhauer" },
-  { text: "礼儀とは、道徳的な欠陥を隠すための外套である。", author: "Arthur Schopenhauer" },
-  { text: "事実というものは存在しない。あるのは解釈だけだ。", author: "Friedrich Nietzsche" },
-  { text: "自分を破壊しないあらゆるものが、私をさらに強くする。", author: "Friedrich Nietzsche" },
-  { text: "あなたの魂の中にいる英雄を、見捨ててはならない。", author: "Friedrich Nietzsche" },
-  { text: "脱皮できない蛇は滅びる。意見を着替えさせられない精神も同様だ。", author: "Friedrich Nietzsche" },
-  { text: "高く登ろうとするならば、自分の足を使え。他人の背中に乗ってはならない。", author: "Friedrich Nietzsche" },
-  { text: "いつか空高く飛びたいと思う者は、まず地におり、立ち、歩き、走り、登り、踊ることを学ばなければならない。", author: "Friedrich Nietzsche" }
-];
-
 type Post = {
   id: string;
   content: string;
@@ -37,9 +21,6 @@ export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [userPosts, setUserPosts] = useState<Post[]>([]) 
   const [postsLoading, setPostsLoading] = useState(true)
-  
-  // 格言オブジェクト用のステート
-  const [quoteObj, setQuoteObj] = useState({ text: '', author: '' })
 
   const router = useRouter()
   const supabase = createBrowserClient(
@@ -77,10 +58,6 @@ export default function Home() {
   }
 
   useEffect(() => {
-    // マウント時にランダムな格言オブジェクトを選択
-    const randomIndex = Math.floor(Math.random() * PHILOSOPHY_QUOTES.length);
-    setQuoteObj(PHILOSOPHY_QUOTES[randomIndex]);
-
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
@@ -152,7 +129,7 @@ export default function Home() {
                   onClick={handleLogout} 
                   className="text-red-400 text-[10px] font-black border border-red-900/40 px-2 py-0.5 rounded bg-red-950/20 uppercase tracking-tighter"
                 >
-                  ログアウト
+                  退出
                 </button>
               </>
             ) : (
@@ -163,26 +140,20 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
-        
-        {/* 格言セクション：著者名付き */}
-        <div className="mb-12 py-8 text-center border-y border-gray-800/50 bg-gray-800/20 rounded-3xl">
-          <p className="text-[10px] text-gray-500 uppercase tracking-[0.2em] mb-4 opacity-70">Deep Insight</p>
-          <p className="text-sm md:text-base text-gray-300 font-serif leading-relaxed px-8 italic">
-            「 {quoteObj.text} 」
-          </p>
-          <p className="text-[10px] text-indigo-400/60 mt-4 tracking-widest font-medium">
-            — {quoteObj.author}
+        {/* 🚨 修正：見出し部分を2行に変更 */}
+        <div className="text-center mb-8">
+          <h2 className="text-xl md:text-2xl font-bold text-indigo-300 tracking-tight">
+            眠れない夜はつぶやいて
+          </h2>
+          <p className="text-xs md:text-sm text-gray-500 mt-2 tracking-wide opacity-80">
+            価値観の合うピープルを探しましょう
           </p>
         </div>
-
-        <h2 className="text-xl md:text-2xl font-bold mb-8 text-center text-indigo-300 tracking-tight">
-          眠れない夜はつぶやいて、価値観の合うピープルを探しましょう
-        </h2>
         
         {/* 投稿セクション */}
         <div className="bg-gray-800 p-5 md:p-8 rounded-2xl shadow-xl border border-gray-700">
           <div className="mb-6">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">ニックネーム</label>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Nickname</label>
             <div className="p-4 border rounded-xl bg-gray-900 text-gray-200 border-gray-700 flex justify-between items-center shadow-inner">
               <span className="font-bold">{nickname || '未設定'}</span>
               <Link href="/settings" className="text-xs text-indigo-400 font-bold px-3 py-1 bg-indigo-950/30 rounded-lg border border-indigo-900/50 hover:bg-indigo-900/50 transition-colors">
@@ -193,7 +164,7 @@ export default function Home() {
 
           <textarea 
             className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600" 
-            placeholder="今の気持ち、好きなこと、いやなこと、などつぶやきましょう。あなたの価値観に共感できるピープルを探します。" 
+            placeholder="今の気持ちを自由に書き出してください。" 
             value={inputText} 
             onChange={(e) => setInputText(e.target.value)} 
           />
@@ -203,14 +174,12 @@ export default function Home() {
             disabled={loading || !nickname}
             className="w-full mt-8 bg-indigo-600 text-white font-black h-16 rounded-2xl shadow-xl hover:bg-indigo-500 transition active:scale-95 disabled:bg-gray-700 disabled:text-gray-500 text-base flex items-center justify-center tracking-widest"
           >
-            {loading ? `${aiName} (AIパートナー)が分析中...` : 'つぶやいてカチピ（仲間）を探す'}
+            {loading ? `${aiName}が分析中...` : 'つぶやいてカチピ（仲間）を探す'}
           </button>
         </div>
 
-        {/* スペーサー */}
         <div className="h-12"></div>
 
-        {/* マッチング結果 */}
         <div className="mt-4">
           {matches.length > 0 && (
             <h3 className="text-lg font-bold mb-8 text-indigo-300 flex items-center gap-2">価値観の近いピープル</h3>
@@ -222,7 +191,6 @@ export default function Home() {
           <div className="border-t border-gray-800 w-full opacity-30"></div>
         </div>
         
-        {/* 履歴セクション */}
         <div className="pb-24">
           <h3 className="text-lg font-bold mb-8 text-gray-400 flex items-center justify-between">
             <span>過去の履歴</span>
