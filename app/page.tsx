@@ -1,8 +1,6 @@
-// app/page.tsx
-
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react' // 👈 useRef を追加
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -14,16 +12,36 @@ type Post = {
   created_at: string;
 }
 
+// ✨ AIの返答をタイピング風に表示する演出用コンポーネント
+const TypewriterText = ({ text }: { text: string }) => {
+  const [displayedText, setDisplayedText] = useState('')
+
+  useEffect(() => {
+    setDisplayedText('')
+    let i = 0
+    const timer = setInterval(() => {
+      setDisplayedText((prev) => prev + text.charAt(i))
+      i++
+      if (i >= text.length) clearInterval(timer)
+    }, 40)
+    return () => clearInterval(timer)
+  }, [text])
+
+  return <>{displayedText}</>
+}
+
 export default function Home() {
   const [inputText, setInputText] = useState('')
   const [nickname, setNickname] = useState('') 
   const [aiName, setAiName] = useState('のぞみ')
+  const [aiReply, setAiReply] = useState<string | null>(null) // ✨ AIの返信を保持するステートを追加
   const [matches, setMatches] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [userPosts, setUserPosts] = useState<Post[]>([]) 
   const [postsLoading, setPostsLoading] = useState(true)
 
+  const replyRef = useRef<HTMLDivElement>(null) // ✨ AI返信箇所へのスクロール用
   const router = useRouter()
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -87,6 +105,7 @@ export default function Home() {
   const handleSave = async () => {
     if (!nickname || !inputText.trim() || !user) return;
     setLoading(true)
+    setAiReply(null) // ✨ 以前の返信をリセット
     const currentInputText = inputText;
     setInputText('');
 
@@ -112,6 +131,16 @@ export default function Home() {
       if (res.ok) {
         // マッチング結果をセット
         setMatches(data.matches || [])
+        
+        // ✨ APIから返ってきた哲学者の言葉をセット
+        if (data.aiReply) {
+          setAiReply(data.aiReply)
+          // 返答が表示されたらそこまでスムーズにスクロール
+          setTimeout(() => {
+            replyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }, 100)
+        }
+
         // 履歴を再読み込み
         await fetchAllData(user.id);
       } else {
@@ -181,7 +210,7 @@ export default function Home() {
           </div>
 
           <textarea 
-            className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600 leading-relaxed" 
+            className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600 leading-relaxed text-lg" 
             placeholder="今の気持ちや、大切にしている価値観を自由に書き出してください。" 
             value={inputText} 
             onChange={(e) => setInputText(e.target.value)} 
@@ -192,8 +221,23 @@ export default function Home() {
             disabled={loading || !nickname}
             className="w-full mt-8 bg-indigo-600 text-white font-black h-16 rounded-2xl shadow-xl hover:bg-indigo-500 transition active:scale-95 disabled:bg-gray-700 disabled:text-gray-500 text-base flex items-center justify-center tracking-widest"
           >
-            {loading ? `${aiName}が分析中...` : 'つぶやいてカチピ（仲間）を探す'}
+            {loading ? `${aiName}が心を受け止めています...` : 'つぶやいてカチピ（仲間）を探す'}
           </button>
+        </div>
+
+        {/* ✨ AIの返答セクション（デザインに馴染むように追加） */}
+        <div ref={replyRef}>
+          {aiReply && (
+            <div className="mt-8 animate-in fade-in slide-in-from-top-4 duration-700">
+              <div className="bg-indigo-950/30 border border-indigo-500/30 p-6 md:p-8 rounded-3xl shadow-2xl relative">
+                <div className="absolute top-2 right-4 text-4xl opacity-10 font-serif">“</div>
+                <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3">{aiName} (思索の導き手)</h3>
+                <p className="text-lg md:text-xl text-indigo-100 leading-relaxed italic font-medium">
+                  <TypewriterText text={aiReply} />
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="h-12"></div>
@@ -201,7 +245,7 @@ export default function Home() {
         {/* マッチング結果表示セクション */}
         <div className="mt-4">
           <h3 className="text-lg font-bold mb-8 text-indigo-300 flex items-center gap-2">
-             {matches.length > 0 ? '価値観の近いピープル' : '寄り添うパートナー'}
+              {matches.length > 0 ? '価値観の近いピープル' : '寄り添うパートナー'}
           </h3>
           <MatchList matches={matches} currentUserId={user?.id} />
         </div>
@@ -225,7 +269,7 @@ export default function Home() {
                 <div key={post.id} className="bg-gray-800/40 p-6 rounded-2xl border border-gray-700/30 hover:bg-gray-800/60 transition-colors">
                   <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
                   <p className="text-[10px] text-gray-600 mt-4 text-right font-mono italic opacity-50">
-                    {new Date(post.created_at).toLocaleString()}
+                    {new Date(post.created_at).toLocaleDateString()}
                   </p>
                 </div>
               ))

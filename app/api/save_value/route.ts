@@ -1,18 +1,14 @@
-// app/api/save_value/route.ts
-
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import OpenAI from 'openai'
+import { GoogleGenerativeAI } from "@google/generative-ai"
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+// Geminiの初期化
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-// Service Roleクライアント（書き込み・検索用）
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-// Anonクライアント（認証用）
 const supabaseAuth = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -33,98 +29,89 @@ export async function POST(req: Request) {
     const currentUserId = user.id
     const now = new Date()
 
-    // 2. 今回の投稿をベクトル化
-    const embRes = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: text,
-    })
-    
-    if (!embRes.data || embRes.data.length === 0) {
-      throw new Error('OpenAIからの応答が不正です')
-    }
-    const newEmbedding = embRes.data[0].embedding
+    // 2. Embedding (ベクトル化)
+    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+    const embRes = await embeddingModel.embedContent(text);
+    const newEmbedding = embRes.embedding.values;
 
     // 3. 投稿を保存
-    const { error: postError } = await supabase.from('posts').insert({
+    await supabase.from('posts').insert({
       user_id: currentUserId,
       content: text,
       nickname: nickname,
       embedding: newEmbedding,
       created_at: now.toISOString()
     })
-    if (postError) throw new Error(`投稿保存失敗: ${postError.message}`)
 
-    // 4. 過去の投稿を取得して「時間減衰」合成
+    // 4. 時間減衰ロジック
     const { data: allPosts } = await supabase
       .from('posts')
       .select('embedding, created_at')
       .eq('user_id', currentUserId)
-      .not('embedding', 'is', null) // null除外
+      .not('embedding', 'is', null)
 
     let finalEmbedding = newEmbedding
-    const HALF_LIFE_DAYS = 30
-    const LAMBDA = Math.log(2) / HALF_LIFE_DAYS
-
     if (allPosts && allPosts.length > 0) {
-      let weightedSum = new Array(1536).fill(0)
+      const HALF_LIFE_DAYS = 30
+      const LAMBDA = Math.log(2) / HALF_LIFE_DAYS
+      let weightedSum = new Array(newEmbedding.length).fill(0)
       let totalWeight = 0
       const nowMs = now.getTime()
 
       allPosts.forEach(p => {
         const diffDays = (nowMs - new Date(p.created_at).getTime()) / (1000 * 86400)
         const weight = Math.exp(-LAMBDA * diffDays)
+        let embArray = typeof p.embedding === 'string' ? JSON.parse(p.embedding) : p.embedding
 
-        // 💡 修正：文字列(vector型)を配列(number[])に変換
-        let embArray: number[] = []
-        if (typeof p.embedding === 'string') {
-          // "[0.1, 0.2]" 形式を配列にパース
-          embArray = JSON.parse(p.embedding)
-        } else if (Array.isArray(p.embedding)) {
-          embArray = p.embedding
-        }
-
-        if (embArray.length === 1536) {
-          embArray.forEach((v, i) => {
-            weightedSum[i] += v * weight
-          })
+        if (embArray && embArray.length === newEmbedding.length) {
+          embArray.forEach((v: number, i: number) => { weightedSum[i] += v * weight })
           totalWeight += weight
         }
-      })
+      });
 
       if (totalWeight > 0) {
-        // 加重平均をとる
         finalEmbedding = weightedSum.map(v => v / totalWeight)
-        // L2正規化（類似度計算のために長さを1に揃える）
         const magnitude = Math.sqrt(finalEmbedding.reduce((acc, v) => acc + v * v, 0))
         finalEmbedding = finalEmbedding.map(v => v / (magnitude || 1))
       }
     }
 
-    // 5. 統合プロフィールの更新
-    const { error: upsertError } = await supabase.from('value_profiles').upsert({
+    // 5. プロフィール更新
+    await supabase.from('value_profiles').upsert({
       user_id: currentUserId,
       nickname: nickname,
-      content: text, // 最新の投稿を代表テキストとする
+      content: text,
       embedding: finalEmbedding,
       updated_at: now.toISOString()
     })
-    if (upsertError) throw new Error(`プロフィール更新失敗: ${upsertError.message}`)
 
-    // 6. マッチング実行（RPC呼び出し）
+    // 6. マッチング実行 (SQL側で created_at を返すようにしたので直接取得可能)
     const { data: matches, error: matchError } = await supabase.rpc('match_values', {
       query_embedding: finalEmbedding,
-      match_threshold: 0.1, // 誰かが出るように低めに設定
+      match_threshold: 0.1,
       match_count: 5
     })
 
-    if (matchError) throw new Error(`マッチング検索失敗: ${matchError.message}`)
+    if (matchError) throw matchError
 
-    const filtered = matches?.filter((m: any) => m.user_id !== currentUserId) || []
+    // 自分自身とAIを除外（created_at は既に matches の中に含まれています）
+    const filtered = (matches || []).filter((m: any) => 
+      m.user_id !== currentUserId && m.user_id !== '00000000-0000-0000-0000-000000000000'
+    )
 
-    return NextResponse.json({ success: true, matches: filtered })
+    // 7. Gemini 返信生成
+    const chatModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const chatPrompt = `あなたは、ユーザーの心に寄り添う親身なパートナーです。難しい理論や哲学用語は一切使わず、ユーザーの今の気持ちやつぶやきを温かく受け止めてください。ユーザーの感情に深く共感し、自分自身の本当の気持ちに気づけるよう、優しく一歩踏み込んだ質問を1つだけ投げかけてください。2〜3行で簡潔に、穏やかな言葉遣いで話してください。
+
+ユーザーのつぶやき: ${text}`;
+
+    const result = await chatModel.generateContent(chatPrompt);
+    const aiReply = result.response.text();
+
+    return NextResponse.json({ success: true, matches: filtered, aiReply })
 
   } catch (error: any) {
-    console.error('API Error:', error.message)
+    console.error('API Error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
