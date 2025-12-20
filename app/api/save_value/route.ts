@@ -1,132 +1,130 @@
+// app/api/save_value/route.ts
+
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-// OpenAIの初期化 (変更なし)
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-// =======================================================
-// 👇 修正1: DB書き込み/RPC呼び出し用クライアント (Service Role Key)
-// =======================================================
+// Service Roleクライアント（書き込み・検索用）
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! 
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// =======================================================
-// 👇 修正2: JWT検証用クライアント (Anon Key) を別途作成
-// =======================================================
+// Anonクライアント（認証用）
 const supabaseAuth = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! 
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
-
 
 export async function POST(req: Request) {
   try {
     const { text, nickname } = await req.json()
 
-    // 1. ユーザー認証の確認
+    // 1. 認証チェック
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      // フロントエンドがトークンを送ってこなかった場合
-      return NextResponse.json({ error: '認証エラー: トークンがありません' }, { status: 401 })
-    }
-    const token = authHeader.replace('Bearer ', '')
-    
-    // 👇 修正3: 認証チェックは Anon Key のクライアントで行う
+    const token = authHeader?.replace('Bearer ', '')
+    if (!token) return NextResponse.json({ error: '認証エラー' }, { status: 401 })
+
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
+    if (authError || !user) return NextResponse.json({ error: '認証失敗' }, { status: 401 })
 
-    if (authError || !user) {
-      console.error('認証失敗:', authError?.message)
-      return NextResponse.json({ error: '認証失敗: ユーザー情報が無効です' }, { status: 401 })
-    }
+    const currentUserId = user.id
+    const now = new Date()
 
-    const currentUserId = user.id;
-    const nowISO = new Date().toISOString();
-
-    // 2. 👇 新しいつぶやきを 'posts' テーブルに個別保存 (DBアクセスは Service Role Key の supabase で行う)
-    const { error: postError } = await supabase
-        .from('posts') // 👈 個別履歴テーブル
-        .insert({ 
-            user_id: currentUserId, 
-            content: text, 
-            nickname: nickname,
-            created_at: nowISO 
-        });
-
-    if (postError) {
-        throw new Error(`投稿履歴の保存失敗: ${postError.message}`);
-    }
-
-
-    // 3. 👇 'posts' テーブルからそのユーザーの全履歴を取得
-    const { data: allPosts, error: fetchError } = await supabase
-      .from('posts')
-      .select('content')
-      .eq('user_id', currentUserId)
-      .order('created_at', { ascending: true });
-
-    if (fetchError) {
-        throw new Error(`履歴の取得失敗: ${fetchError.message}`);
-    }
-
-    // 4. 全履歴を結合
-    const combinedText = allPosts ? allPosts.map(post => post.content).join('\n') : text;
-
-    // 5. 結合したテキスト全体をベクトル化 (Embedding)
-    const embeddingResponse = await openai.embeddings.create({
+    // 2. 今回の投稿をベクトル化
+    const embRes = await openai.embeddings.create({
       model: 'text-embedding-3-small',
-      input: combinedText,
+      input: text,
     })
-    const embedding = embeddingResponse.data[0].embedding
+    
+    if (!embRes.data || embRes.data.length === 0) {
+      throw new Error('OpenAIからの応答が不正です')
+    }
+    const newEmbedding = embRes.data[0].embedding
 
-    // 6. 👇 結合された全文とベクトルを 'value_profiles' に Upsert
-    const { error: upsertError } = await supabase
-      .from('value_profiles') // 👈 相性検索用の結合テーブル
-      .upsert({
-        user_id: currentUserId,
-        nickname: nickname,
-        content: combinedText, // 結合したテキストを保存
-        embedding: embedding,  // 新しいベクトル
-        updated_at: nowISO,
+    // 3. 投稿を保存
+    const { error: postError } = await supabase.from('posts').insert({
+      user_id: currentUserId,
+      content: text,
+      nickname: nickname,
+      embedding: newEmbedding,
+      created_at: now.toISOString()
+    })
+    if (postError) throw new Error(`投稿保存失敗: ${postError.message}`)
+
+    // 4. 過去の投稿を取得して「時間減衰」合成
+    const { data: allPosts } = await supabase
+      .from('posts')
+      .select('embedding, created_at')
+      .eq('user_id', currentUserId)
+      .not('embedding', 'is', null) // null除外
+
+    let finalEmbedding = newEmbedding
+    const HALF_LIFE_DAYS = 30
+    const LAMBDA = Math.log(2) / HALF_LIFE_DAYS
+
+    if (allPosts && allPosts.length > 0) {
+      let weightedSum = new Array(1536).fill(0)
+      let totalWeight = 0
+      const nowMs = now.getTime()
+
+      allPosts.forEach(p => {
+        const diffDays = (nowMs - new Date(p.created_at).getTime()) / (1000 * 86400)
+        const weight = Math.exp(-LAMBDA * diffDays)
+
+        // 💡 修正：文字列(vector型)を配列(number[])に変換
+        let embArray: number[] = []
+        if (typeof p.embedding === 'string') {
+          // "[0.1, 0.2]" 形式を配列にパース
+          embArray = JSON.parse(p.embedding)
+        } else if (Array.isArray(p.embedding)) {
+          embArray = p.embedding
+        }
+
+        if (embArray.length === 1536) {
+          embArray.forEach((v, i) => {
+            weightedSum[i] += v * weight
+          })
+          totalWeight += weight
+        }
       })
 
-    if (upsertError) {
-      throw new Error(`相性プロフィールの更新失敗: ${upsertError.message}`)
+      if (totalWeight > 0) {
+        // 加重平均をとる
+        finalEmbedding = weightedSum.map(v => v / totalWeight)
+        // L2正規化（類似度計算のために長さを1に揃える）
+        const magnitude = Math.sqrt(finalEmbedding.reduce((acc, v) => acc + v * v, 0))
+        finalEmbedding = finalEmbedding.map(v => v / (magnitude || 1))
+      }
     }
-    
-    // プロフィールテーブルがある場合はそちらのニックネームも更新
-    await supabase
-      .from('profiles')
-      .upsert({ id: currentUserId, nickname: nickname })
 
+    // 5. 統合プロフィールの更新
+    const { error: upsertError } = await supabase.from('value_profiles').upsert({
+      user_id: currentUserId,
+      nickname: nickname,
+      content: text, // 最新の投稿を代表テキストとする
+      embedding: finalEmbedding,
+      updated_at: now.toISOString()
+    })
+    if (upsertError) throw new Error(`プロフィール更新失敗: ${upsertError.message}`)
 
-    // 7. マッチング処理 (結合後のベクトルを使って検索)
+    // 6. マッチング実行（RPC呼び出し）
     const { data: matches, error: matchError } = await supabase.rpc('match_values', {
-      query_embedding: embedding,
-      match_threshold: 0.5,
-      match_count: 5,
+      query_embedding: finalEmbedding,
+      match_threshold: 0.1, // 誰かが出るように低めに設定
+      match_count: 5
     })
 
-    if (matchError) {
-      console.error('Match error:', matchError)
-      return NextResponse.json({ matches: [] })
-    }
+    if (matchError) throw new Error(`マッチング検索失敗: ${matchError.message}`)
 
-    const filteredMatches = matches ? matches.filter((m: any) => m.user_id !== currentUserId) : []
+    const filtered = matches?.filter((m: any) => m.user_id !== currentUserId) || []
 
-    return NextResponse.json({ 
-      success: true, 
-      matches: filteredMatches,
-      savedText: combinedText 
-    })
+    return NextResponse.json({ success: true, matches: filtered })
 
   } catch (error: any) {
-    // サーバーのターミナルでエラーを確認できるようにログ出力
-    console.error('API処理中のエラー:', error.message) 
-    return NextResponse.json({ error: error.message || 'サーバー内部エラー' }, { status: 500 })
+    console.error('API Error:', error.message)
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

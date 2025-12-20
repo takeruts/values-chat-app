@@ -1,3 +1,5 @@
+// app/page.tsx
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -28,8 +30,10 @@ export default function Home() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  // ユーザーデータ（プロフィール・投稿履歴）の取得
   const fetchAllData = async (userId: string) => {
     setPostsLoading(true);
+    // プロフィール取得
     const { data: profile } = await supabase
       .from('profiles')
       .select('nickname, ai_name, ai_gender')
@@ -47,6 +51,7 @@ export default function Home() {
       }
     }
     
+    // 投稿履歴取得
     const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select('id, content, created_at')
@@ -57,6 +62,7 @@ export default function Home() {
     setPostsLoading(false);
   }
 
+  // 初期ロード：ユーザー認証チェック
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -77,6 +83,7 @@ export default function Home() {
     router.refresh()
   }
 
+  // 投稿とマッチング実行
   const handleSave = async () => {
     if (!nickname || !inputText.trim() || !user) return;
     setLoading(true)
@@ -90,18 +97,29 @@ export default function Home() {
       
       const res = await fetch('/api/save_value', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({ text: currentInputText, nickname: nickname }),
       })
 
       const data = await res.json()
+      
+      // 🕵️ デバッグログ：ブラウザのコンソールで結果を確認できます
+      console.log("Matching Debug:", data);
+
       if (res.ok) {
-        setMatches(data.matches)
+        // マッチング結果をセット
+        setMatches(data.matches || [])
+        // 履歴を再読み込み
         await fetchAllData(user.id);
+      } else {
+        throw new Error(data.error || '保存に失敗しました');
       }
     } catch (error: any) {
       alert(error.message)
-      setInputText(currentInputText);
+      setInputText(currentInputText); // 失敗時は入力内容を復元
     } finally {
       setLoading(false)
     }
@@ -114,7 +132,7 @@ export default function Home() {
       <header className="bg-gray-800 shadow-lg sticky top-0 z-50 border-b border-gray-700">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/">
-            <h1 className="text-lg font-bold text-indigo-400">カチピ <span className="text-[10px] opacity-60">BETA</span></h1>
+            <h1 className="text-lg font-bold text-indigo-400">カチピ <span className="text-[10px] opacity-60 font-normal">BETA</span></h1>
           </Link>
           <div className="flex items-center gap-5 shrink-0">
             {user ? (
@@ -127,7 +145,7 @@ export default function Home() {
                 </Link>
                 <button 
                   onClick={handleLogout} 
-                  className="text-red-400 text-[10px] font-black border border-red-900/40 px-2 py-0.5 rounded bg-red-950/20 uppercase tracking-tighter"
+                  className="text-red-400 text-[10px] font-black border border-red-900/40 px-2 py-0.5 rounded bg-red-950/20 uppercase tracking-tighter hover:bg-red-900/40 transition-all"
                 >
                   退出
                 </button>
@@ -140,7 +158,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-3xl mx-auto p-4 md:p-8">
-        {/* 🚨 修正：見出し部分を2行に変更 */}
+        {/* キャッチコピー */}
         <div className="text-center mb-8">
           <h2 className="text-xl md:text-2xl font-bold text-indigo-300 tracking-tight">
             眠れない夜はつぶやいて
@@ -150,10 +168,10 @@ export default function Home() {
           </p>
         </div>
         
-        {/* 投稿セクション */}
+        {/* 入力フォーム */}
         <div className="bg-gray-800 p-5 md:p-8 rounded-2xl shadow-xl border border-gray-700">
           <div className="mb-6">
-            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Nickname</label>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block mb-2">Your Nickname</label>
             <div className="p-4 border rounded-xl bg-gray-900 text-gray-200 border-gray-700 flex justify-between items-center shadow-inner">
               <span className="font-bold">{nickname || '未設定'}</span>
               <Link href="/settings" className="text-xs text-indigo-400 font-bold px-3 py-1 bg-indigo-950/30 rounded-lg border border-indigo-900/50 hover:bg-indigo-900/50 transition-colors">
@@ -163,8 +181,8 @@ export default function Home() {
           </div>
 
           <textarea 
-            className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600" 
-            placeholder="今の気持ちを自由に書き出してください。" 
+            className="w-full p-5 border rounded-2xl h-40 bg-gray-900 text-gray-200 border-gray-700 focus:border-indigo-500 transition-all resize-none shadow-inner outline-none placeholder-gray-600 leading-relaxed" 
+            placeholder="今の気持ちや、大切にしている価値観を自由に書き出してください。" 
             value={inputText} 
             onChange={(e) => setInputText(e.target.value)} 
           />
@@ -180,10 +198,11 @@ export default function Home() {
 
         <div className="h-12"></div>
 
+        {/* マッチング結果表示セクション */}
         <div className="mt-4">
-          {matches.length > 0 && (
-            <h3 className="text-lg font-bold mb-8 text-indigo-300 flex items-center gap-2">価値観の近いピープル</h3>
-          )}
+          <h3 className="text-lg font-bold mb-8 text-indigo-300 flex items-center gap-2">
+             {matches.length > 0 ? '価値観の近いピープル' : '寄り添うパートナー'}
+          </h3>
           <MatchList matches={matches} currentUserId={user?.id} />
         </div>
         
@@ -191,6 +210,7 @@ export default function Home() {
           <div className="border-t border-gray-800 w-full opacity-30"></div>
         </div>
         
+        {/* 過去ログセクション */}
         <div className="pb-24">
           <h3 className="text-lg font-bold mb-8 text-gray-400 flex items-center justify-between">
             <span>過去の履歴</span>
@@ -198,14 +218,22 @@ export default function Home() {
           </h3>
           
           <div className="grid gap-6">
-            {userPosts.map((post) => (
-              <div key={post.id} className="bg-gray-800/40 p-6 rounded-2xl border border-gray-700/30 hover:bg-gray-800/60 transition-colors">
-                <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
-                <p className="text-[10px] text-gray-600 mt-4 text-right font-mono italic opacity-50">
-                  {new Date(post.created_at).toLocaleString()}
-                </p>
-              </div>
-            ))}
+            {postsLoading ? (
+              <p className="text-center text-gray-600 animate-pulse">読み込み中...</p>
+            ) : userPosts.length > 0 ? (
+              userPosts.map((post) => (
+                <div key={post.id} className="bg-gray-800/40 p-6 rounded-2xl border border-gray-700/30 hover:bg-gray-800/60 transition-colors">
+                  <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                  <p className="text-[10px] text-gray-600 mt-4 text-right font-mono italic opacity-50">
+                    {new Date(post.created_at).toLocaleString()}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-gray-600 py-10 border border-dashed border-gray-800 rounded-2xl">
+                まだ履歴はありません
+              </p>
+            )}
           </div>
         </div>
       </main>
