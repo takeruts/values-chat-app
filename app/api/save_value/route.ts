@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from "@google/generative-ai"
+import { GoogleGenerativeAI, TaskType } from "@google/generative-ai"
 
 // Geminiの初期化
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -29,9 +29,16 @@ export async function POST(req: Request) {
     const currentUserId = user.id
     const now = new Date()
 
-    // 2. Embedding (ベクトル化)
+    // 2. Embedding (ベクトル化) の修正
     const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
-    const embRes = await embeddingModel.embedContent(text);
+    const embRes = await embeddingModel.embedContent({
+      content: { 
+        role: "user", 
+        parts: [{ text: text }] 
+      },
+      // 🚨 文字列ではなく、インポートした TaskType を使用します
+      taskType: TaskType.RETRIEVAL_DOCUMENT, 
+    });
     const newEmbedding = embRes.embedding.values;
 
     // 3. 投稿を保存
@@ -71,6 +78,7 @@ export async function POST(req: Request) {
 
       if (totalWeight > 0) {
         finalEmbedding = weightedSum.map(v => v / totalWeight)
+        // 正規化（ベクトルの長さを1に揃える）
         const magnitude = Math.sqrt(finalEmbedding.reduce((acc, v) => acc + v * v, 0))
         finalEmbedding = finalEmbedding.map(v => v / (magnitude || 1))
       }
@@ -85,23 +93,40 @@ export async function POST(req: Request) {
       updated_at: now.toISOString()
     })
 
-    // 6. マッチング実行 (SQL側で created_at を返すようにしたので直接取得可能)
+    // 6. マッチング実行
     const { data: matches, error: matchError } = await supabase.rpc('match_values', {
       query_embedding: finalEmbedding,
-      match_threshold: 0.1,
-      match_count: 5
+      match_threshold: 0.1, // 低めに設定して後で補正する
+      match_count: 10,
+      current_user_id: currentUserId // 👈 SQL側で自分を除外させる
     })
 
     if (matchError) throw matchError
 
-    // 自分自身とAIを除外（created_at は既に matches の中に含まれています）
-    const filtered = (matches || []).filter((m: any) => 
-      m.user_id !== currentUserId && m.user_id !== '00000000-0000-0000-0000-000000000000'
-    )
+    // 自分自身とAI、および「つぶやきが空」のデータを除外
+    const filtered = (matches || [])
+      .filter((m: any) => 
+        m.user_id !== currentUserId && 
+        m.user_id !== '00000000-0000-0000-0000-000000000000' &&
+        m.content !== null
+      )
+      .map((m: any) => {
+        // ✨ 共感度（Similarity）の補正ロジック
+        // Gemini 004は 0.7 くらいが最低ラインになりやすいため、
+        // 0.7(0%) 〜 1.0(100%) に引き伸ばして表示上の「差」を作る
+        const minSim = 0.7;
+        let displayScore = (m.similarity - minSim) / (1 - minSim);
+        displayScore = Math.max(0, Math.min(1, displayScore)); // 0〜1に収める
+        
+        return {
+          ...m,
+          similarity: displayScore // 補正後のスコアを返す
+        }
+      });
 
     // 7. Gemini 返信生成
     const chatModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const chatPrompt = `あなたは、ユーザーの心に寄り添う親身なパートナーです。難しい理論や哲学用語は一切使わず、ユーザーの今の気持ちやつぶやきを温かく受け止めてください。ユーザーの感情に深く共感し、自分自身の本当の気持ちに気づけるよう、優しく一歩踏み込んだ質問を1つだけ投げかけてください。2〜3行で簡潔に、穏やかな言葉遣いで話してください。
+    const chatPrompt = `あなたは、ユーザーの心に寄り添う親身なパートナーです。心理学や哲学の専門家で、ユーザーの今の気持ちやつぶやきを温かく受け止めてください。ユーザーの感情に深く共感し、自分自身の本当の気持ちに気づけるよう、優しく一歩踏み込んだ質問を1つだけ投げかけてください。2〜3行で簡潔に、わかりやすく、やさしく、穏やかな言葉遣いで話してください。
 
 ユーザーのつぶやき: ${text}`;
 

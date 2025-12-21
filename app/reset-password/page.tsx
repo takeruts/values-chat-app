@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
 
@@ -8,6 +8,7 @@ export default function ResetPasswordPage() {
   const [newPassword, setNewPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
   const router = useRouter()
   
   const supabase = createBrowserClient(
@@ -15,28 +16,47 @@ export default function ResetPasswordPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  // 🚨 セッションチェック
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      // メールリンク経由で正しく認可されていない場合はトップへ戻す
+      if (!session) {
+        setErrorMsg('認証セッションが無効、または期限切れです。再度リセットメールをリクエストしてください。')
+      }
+    }
+    checkSession()
+  }, [supabase])
+
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
+    setErrorMsg('')
 
-    // 🚨 Supabase Auth の機能を使ってパスワードを更新
-    // メールリンクからこのページに来た時点で、ユーザーは一時的なセッションを持っています
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword
-    })
+    try {
+      // Supabase Auth の機能を使ってパスワードを更新
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
 
-    if (error) {
-      alert('更新に失敗しました: ' + error.message)
-    } else {
-      setMessage('パスワードを正常に更新しました。トップページへ移動します。')
-      // 成功感を出すために少し待ってから移動
-      setTimeout(() => {
-        router.push('/')
-        router.refresh()
-      }, 3000)
+      if (error) {
+        setErrorMsg('更新に失敗しました: ' + error.message)
+      } else {
+        setMessage('パスワードを正常に更新しました。まもなくトップページへ移動します。')
+        
+        // 🚨 確実にセッションを更新してからリダイレクト
+        setTimeout(async () => {
+          await supabase.auth.signOut() // 一旦ログアウトさせて再ログインを促すか、そのままログインさせるかは運用次第
+          router.push('/login')
+          router.refresh()
+        }, 3000)
+      }
+    } catch (err) {
+      setErrorMsg('予期せぬエラーが発生しました。')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
@@ -74,16 +94,24 @@ export default function ResetPasswordPage() {
 
           <button 
             type="submit" 
-            disabled={loading || newPassword.length < 6}
+            disabled={loading || newPassword.length < 6 || !!errorMsg && !message}
             className="w-full bg-indigo-600 text-white font-black h-16 rounded-2xl shadow-xl shadow-indigo-900/20 hover:bg-indigo-500 transition-all active:scale-[0.98] disabled:bg-gray-800 disabled:text-gray-600 tracking-[0.2em] text-sm"
           >
             {loading ? '更新中...' : 'パスワードを更新'}
           </button>
         </form>
 
+        {/* 成功メッセージ */}
         {message && (
           <div className="mt-8 p-5 rounded-2xl bg-indigo-950/30 text-indigo-300 border border-indigo-900/40 text-xs font-bold text-center leading-relaxed animate-in fade-in slide-in-from-top-2">
             {message}
+          </div>
+        )}
+
+        {/* エラーメッセージ */}
+        {errorMsg && (
+          <div className="mt-8 p-5 rounded-2xl bg-red-950/30 text-red-400 border border-red-900/40 text-xs font-bold text-center leading-relaxed animate-in fade-in slide-in-from-top-2">
+            {errorMsg}
           </div>
         )}
       </div>

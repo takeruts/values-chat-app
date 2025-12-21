@@ -45,7 +45,8 @@ export default function LoginPage() {
     }
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      // 修正後（推奨：認証セッションを確実に確立するため）
+      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
     })
     if (error) setMessage('エラー: ' + error.message)
     else setMessage('再設定用のリンクをメールで送信しました。')
