@@ -5,7 +5,6 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  // nextが指定されていない場合はパスワードリセット画面へ
   const next = searchParams.get('next') ?? '/reset-password'
 
   if (code) {
@@ -15,29 +14,33 @@ export async function GET(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) { return cookieStore.get(name)?.value },
-          set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options })
-          },
-          remove(name: string, options: any) {
-            cookieStore.set({ name, value: '', ...options })
+          // get, set, remove すべてを確実に定義する
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+              )
+            } catch {
+              // Server Componentから呼ばれた場合のエラーを回避
+            }
           },
         },
       }
     )
 
-    // 🚨 認証コードをセッションに交換
+    // 🚨 ここでエラーが出ている場合、codeが古いか、ドメイン設定が違います
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
-      // 成功したら /reset-password へ
+      // 成功：ログイン状態でリセット画面へ
       return NextResponse.redirect(`${origin}${next}`)
     }
     
-    // エラー内容をログに出力（デバッグ用）
-    console.error('Auth Callback Error:', error.message)
+    console.error('Auth Exchange Error:', error.message)
+    // エラー詳細をURLに付与してデバッグ
+    return NextResponse.redirect(`${origin}/auth/auth-error?message=${encodeURIComponent(error.message)}`)
   }
 
-  // 失敗した場合はエラー画面へ（URLにエラー内容を付与するとデバッグしやすい）
-  return NextResponse.redirect(`${origin}/auth/auth-error?message=unable_to_exchange_code`)
+  return NextResponse.redirect(`${origin}/auth/auth-error?message=no_code_present`)
 }
