@@ -10,27 +10,42 @@ export default function ResetPasswordPage() {
   const [message, setMessage] = useState('')
   const router = useRouter()
 
-  // 🚨 ブラウザ用クライアントの初期化
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
+
+  // 🚨 ポイント：ページ表示時にURLのハッシュを解析してセッションを作る
+  useEffect(() => {
+    const setSessionFromHash = async () => {
+      // URLに #access_token=... が含まれている場合、Supabase SDKが自動でセッションを確立します
+      const { data, error } = await supabase.auth.getSession()
+      if (error || !data.session) {
+        console.error('Session error:', error)
+        setMessage('エラー: 認証セッションが見つかりません。もう一度メールのリンクをクリックしてください。')
+      }
+    }
+    setSessionFromHash()
+  }, [supabase])
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
 
-    // 🚨 ログインセッションがある状態でパスワードを更新
+    // 🚨 ログインセッションがあることを確認してから更新
     const { error } = await supabase.auth.updateUser({
       password: password
     })
 
     if (error) {
-      setMessage(`エラー: ${error.message}`)
+      if (error.message.includes('session missing')) {
+        setMessage('エラー: セッションが切れました。メールから再度開き直してください。')
+      } else {
+        setMessage(`エラー: ${error.message}`)
+      }
     } else {
       setMessage('パスワードを更新しました！ログインページへ移動します...')
-      // 安全のため一度ログアウト
       await supabase.auth.signOut()
       setTimeout(() => router.push('/login'), 2000)
     }
