@@ -9,7 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
-  const [view, setView] = useState<'auth' | 'forgot_password'>('auth') // 🚨 画面切り替え用
+  const [view, setView] = useState<'auth' | 'forgot_password'>('auth')
   const router = useRouter()
 
   const supabase = createBrowserClient(
@@ -17,27 +17,36 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  // 🚨 修正：このページでの紐付け（mergeAnonymousData）は行わず、
+  // IDを保持したままトップページへ遷移させます。
+  // 紐付けは Home (app/page.tsx) の useEffect で一括で行うのが最も安全です。
+
   const handleSignUp = async () => {
     setLoading(true)
-    const { error } = await supabase.auth.signUp({ email, password })
-    if (error) setMessage('エラー: ' + error.message)
-    else setMessage('確認メールを送信しました！メールを確認してください。')
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if (error) {
+      setMessage('エラー: ' + error.message)
+    } else {
+      setMessage('確認メールを送信しました！メールを確認してください。')
+      // IDを保持したままトップへ（確認メール経由の場合は callback 経由で Home へ）
+    }
     setLoading(false)
   }
 
   const handleSignIn = async () => {
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setMessage('エラー: ' + error.message)
       setLoading(false)
-    } else {
+    } else if (data.user) {
+      // 🚀 ログイン成功！IDは消さずにトップページへ移動
+      // IDの紐付けと消去は app/page.tsx のロジックが担当します
       router.push('/')
       router.refresh()
     }
   }
 
-  // 🚨 追加：パスワード再設定メール送信
   const handleResetPassword = async () => {
     if (!email) {
       setMessage('エラー: メールアドレスを入力してください')
@@ -45,7 +54,6 @@ export default function LoginPage() {
     }
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      // 修正後（推奨：認証セッションを確実に確立するため）
       redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
     })
     if (error) setMessage('エラー: ' + error.message)
