@@ -16,9 +16,25 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect_to')
 
+  // --- Supabaseクライアント設定 (型エラー回避版) ---
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        storageKey: 'sb-auth-token',
+        persistSession: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+      },
+      // 【修正】cookieOptions は auth の中ではなくここ（直下）に置く
+      cookieOptions: {
+        domain: '.tarotai.jp',
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
+      },
+    }
   )
 
   const handleGoogleLogin = async () => {
