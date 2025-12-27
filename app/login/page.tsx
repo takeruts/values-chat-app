@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, Suspense } from 'react' // 👈 Suspense を追加
+import { useState, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-// フォーム部分を別コンポーネントに分離
 function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,6 +21,20 @@ function LoginForm() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
+  const handleGoogleLogin = async () => {
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+      },
+    })
+    if (error) {
+      setMessage(`エラー: ${error.message}`)
+      setLoading(false)
+    }
+  }
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -33,7 +46,7 @@ function LoginForm() {
       setMessage(`エラー: ${error.message}`)
       setLoading(false)
     } else {
-      if (redirectTo) {
+      if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
         window.location.href = redirectTo
       } else {
         router.push('/')
@@ -66,35 +79,49 @@ function LoginForm() {
   return (
     <div className="max-w-md w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700">
       {redirectTo && (
-        <div className="mb-4 p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
-          <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-bold">
-            ログイン後、元のサービスに戻ります
+        <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
+          <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-black">
+            Login to continue to tarotai.jp
           </p>
         </div>
       )}
 
       <div className="text-center mb-8">
         <Link href="/">
-          <h1 className="text-3xl font-black text-indigo-400 mb-2 tracking-tighter cursor-pointer">カチピ</h1>
+          <h1 className="text-3xl font-black text-indigo-400 mb-2 tracking-tighter cursor-pointer uppercase">Kachipi</h1>
         </Link>
-        <p className="text-gray-400 text-sm">あなたの価値観を守るための入り口</p>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Authentication Gateway</p>
       </div>
 
-      <form className="space-y-6">
+      <button
+        onClick={handleGoogleLogin}
+        disabled={loading}
+        className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-bold h-14 rounded-2xl mb-6 hover:bg-gray-100 transition active:scale-95 disabled:opacity-50"
+      >
+        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
+        Googleでログイン
+      </button>
+
+      <div className="relative mb-6">
+        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-700"></div></div>
+        <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-gray-800 px-4 text-gray-500 font-bold">Or use email</span></div>
+      </div>
+
+      <form className="space-y-4" onSubmit={handleSignIn}>
         <div>
-          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-2 tracking-widest">Email Address</label>
+          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5 ml-1 tracking-widest">Email</label>
           <input
             type="email"
             className="w-full p-4 rounded-2xl bg-gray-900 text-gray-200 border border-gray-700 focus:border-indigo-500 outline-none transition-all shadow-inner"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="example@mail.com"
+            placeholder="mail@example.com"
             required
           />
         </div>
 
         <div>
-          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-2 tracking-widest">Password</label>
+          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5 ml-1 tracking-widest">Password</label>
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
@@ -107,37 +134,36 @@ function LoginForm() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-indigo-400 transition-colors p-1"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500"
             >
               {showPassword ? (
-                <span className="text-[10px] font-black border border-indigo-500/50 px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400">HIDE</span>
+                <span className="text-[10px] font-black border border-indigo-500/50 px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 uppercase">Hide</span>
               ) : (
-                <span className="text-[10px] font-black border border-gray-700 px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">SHOW</span>
+                <span className="text-[10px] font-black border border-gray-700 px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 uppercase">Show</span>
               )}
             </button>
           </div>
         </div>
 
         {message && (
-          <div className={`p-4 rounded-xl text-xs font-bold ${message.includes('エラー') ? 'bg-red-950/30 text-red-400 border border-red-900/50' : 'bg-emerald-950/30 text-emerald-400 border border-emerald-900/50'}`}>
+          <div className={`p-4 rounded-xl text-xs font-bold leading-relaxed ${message.includes('エラー') ? 'bg-red-950/30 text-red-400 border border-red-900/50' : 'bg-emerald-950/30 text-emerald-400 border border-emerald-900/50'}`}>
             {message}
           </div>
         )}
 
         <div className="flex flex-col gap-3 pt-4">
           <button
-            onClick={handleSignIn}
             type="submit"
             disabled={loading}
             className="w-full bg-indigo-600 text-white font-black h-14 rounded-2xl shadow-lg hover:bg-indigo-500 transition active:scale-95 disabled:bg-gray-700"
           >
-            {loading ? '処理中...' : 'ログイン'}
+            {loading ? 'Processing...' : 'ログイン'}
           </button>
           <button
             onClick={handleSignUp}
             type="button"
             disabled={loading}
-            className="w-full bg-transparent text-gray-400 font-bold h-14 rounded-2xl border border-gray-700 hover:bg-gray-700/30 transition active:scale-95 disabled:opacity-50"
+            className="w-full bg-transparent text-gray-500 font-bold h-12 rounded-2xl border border-gray-700 hover:bg-gray-700/30 transition active:scale-95 disabled:opacity-50 text-xs"
           >
             新規アカウント作成
           </button>
@@ -145,20 +171,18 @@ function LoginForm() {
       </form>
 
       <div className="mt-8 text-center">
-        <Link href="/" className="text-xs text-gray-500 hover:text-indigo-400 transition">
-          ← トップページへ戻る
+        <Link href="/" className="text-[10px] font-bold text-gray-600 hover:text-indigo-400 transition uppercase tracking-widest">
+          ← Back to kachipi home
         </Link>
       </div>
     </div>
   )
 }
 
-// メインのPageコンポーネント
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center p-4">
-      {/* 👈 ここで Suspense を使うことでエラーを回避 */}
-      <Suspense fallback={<div className="text-indigo-400">Loading...</div>}>
+    <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center p-4 font-sans">
+      <Suspense fallback={<div className="text-indigo-400 font-black animate-pulse uppercase tracking-widest">Initialising...</div>}>
         <LoginForm />
       </Suspense>
     </div>
