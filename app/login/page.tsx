@@ -16,7 +16,6 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect_to')
 
-  // --- Supabaseクライアント設定 (型エラー回避版) ---
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,7 +26,6 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
-      // 【修正】cookieOptions は auth の中ではなくここ（直下）に置く
       cookieOptions: {
         domain: '.tarotai.jp',
         path: '/',
@@ -51,6 +49,7 @@ function LoginForm() {
     }
   }
 
+  // --- 修正された handleSignIn (重複なし版) ---
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -62,6 +61,9 @@ function LoginForm() {
       setMessage(`エラー: ${error.message}`)
       setLoading(false)
     } else {
+      // ブラウザが .tarotai.jp にCookieを書き込む時間を確保（重要）
+      await new Promise(resolve => setTimeout(resolve, 500))
+
       if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
         window.location.href = redirectTo
       } else {
@@ -93,7 +95,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="max-w-md w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700">
+    <div className="max-w-md w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700 font-sans">
       {redirectTo && (
         <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
           <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-black">
@@ -197,7 +199,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center p-4 font-sans">
+    <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center p-4">
       <Suspense fallback={<div className="text-indigo-400 font-black animate-pulse uppercase tracking-widest">Initialising...</div>}>
         <LoginForm />
       </Suspense>
