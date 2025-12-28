@@ -26,7 +26,6 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
-      // cookieOptions は auth の外、かつここ（options直下）が正解です
       cookieOptions: {
         domain: '.tarotai.jp',
         path: '/',
@@ -50,23 +49,28 @@ function LoginForm() {
     }
   }
 
-  // --- 修正された handleSignIn (重複なし版) ---
+  // --- トークン受け渡し方式に対応した handleSignIn ---
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
       setMessage(`エラー: ${error.message}`)
       setLoading(false)
-    } else {
-      // ブラウザが .tarotai.jp にCookieを書き込む時間を確保（重要）
-      await new Promise(resolve => setTimeout(resolve, 500))
+    } else if (data.session) {
+      // セッション情報を取得
+      const { access_token, refresh_token } = data.session
 
       if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
-        window.location.href = redirectTo
+        // リダイレクト先にトークンをパラメータとして付与
+        const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
+        url.searchParams.set('access_token', access_token)
+        url.searchParams.set('refresh_token', refresh_token)
+        
+        window.location.href = url.toString()
       } else {
         router.push('/')
         router.refresh()

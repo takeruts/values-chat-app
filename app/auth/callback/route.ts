@@ -36,16 +36,16 @@ export async function GET(request: Request) {
     )
 
     // 1. 認証コードをセッションに交換
-    const { data: { user }, error } = await supabase.auth.exchangeCodeForSession(code)
+    // 重要: exchangeCodeForSession は data.session を返します
+    const { data: { user, session }, error } = await supabase.auth.exchangeCodeForSession(code)
     
-    if (!error && user) {
+    if (!error && user && session) {
       console.log('3. Login Success: ', user.id)
 
       // 🚀 2. 未ログイン時の投稿をログインユーザーに紐付ける
       if (anonymousId) {
         console.log('4. Merging data for Anonymous ID:', anonymousId)
         
-        // postsテーブルの更新を実行
         const { data: updatedPosts, error: updateError } = await supabase
           .from('posts')
           .update({ 
@@ -62,19 +62,16 @@ export async function GET(request: Request) {
         if (updatedPosts && updatedPosts.length > 0) {
           console.log(`5. Successfully merged ${updatedPosts.length} posts.`)
 
-          // 最新の投稿を取得
           const latestPost = updatedPosts.sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
 
-          // ✨ 既存ユーザーのプロフィールをチェック
           const { data: existingProfile } = await supabase
             .from('value_profiles')
             .select('nickname')
             .eq('user_id', user.id)
             .single()
 
-          // 3. プロフィールを更新（既存のニックネームがあればそれを維持）
           const { error: upsertError } = await supabase.from('value_profiles').upsert({
             user_id: user.id,
             nickname: existingProfile?.nickname || latestPost.nickname,
@@ -92,12 +89,23 @@ export async function GET(request: Request) {
           console.warn('⚠️ No posts found with this anonymous_id.')
         }
 
-        // 4. 一時IDクッキーを削除
         cookieStore.set('anonymous_id', '', { maxAge: 0 })
       }
 
       console.log('--- [Auth Callback] End: Success Redirect ---')
-      return NextResponse.redirect(`${origin}${next}`)
+
+      // ✨ ✨ ✨ [トークン受け渡しロジックの追加] ✨ ✨ ✨
+      // リダイレクト先 URL オブジェクトを作成
+      // next がフルパス (https://...) か、相対パス (/) かを考慮して生成
+      const redirectUrl = new URL(next.startsWith('http') ? next : `${origin}${next}`)
+
+      // リダイレクト先が tarotai.jp などの外部ドメイン連携の場合、トークンを付与
+      if (redirectUrl.hostname.includes('tarotai.jp')) {
+        redirectUrl.searchParams.set('access_token', session.access_token)
+        redirectUrl.searchParams.set('refresh_token', session.refresh_token)
+      }
+
+      return NextResponse.redirect(redirectUrl.toString())
     }
     
     if (error) {
