@@ -26,6 +26,7 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
+      // cookieOptions は auth の外、かつここ（options直下）が正解です
       cookieOptions: {
         domain: '.tarotai.jp',
         path: '/',
