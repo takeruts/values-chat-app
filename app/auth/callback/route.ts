@@ -8,13 +8,12 @@ export async function GET(request: Request) {
   const next = searchParams.get('next') ?? '/'
 
   console.log('--- [Auth Callback] Start ---')
+  console.log('1. Auth Code:', code ? 'Present' : 'Missing')
+  console.log('2. Target Next:', next)
   
   if (code) {
     const cookieStore = await cookies()
     const anonymousId = cookieStore.get('anonymous_id')?.value
-
-    console.log('1. Anonymous ID from Cookie:', anonymousId)
-    console.log('2. Auth Code:', code ? 'Present' : 'Missing')
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -28,21 +27,24 @@ export async function GET(request: Request) {
                 cookieStore.set(name, value, options)
               )
             } catch {
-              // Server Componentからのリダイレクト時は無視される
+              // Server Componentからのリダイレクト時はセットできないが、
+              // exchangeCodeForSession自体は動作します
             }
           },
         },
       }
     )
 
-    // 1. 認証コードをセッションに交換
-    // 重要: exchangeCodeForSession は data.session を返します
-    const { data: { user, session }, error } = await supabase.auth.exchangeCodeForSession(code)
+    // 🚀 1. 認証コードをセッションに交換
+    // Googleログイン時などはここでのセッション取得が必須です
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     
-    if (!error && user && session) {
+    if (!error && data.user && data.session) {
+      const user = data.user
+      const session = data.session
       console.log('3. Login Success: ', user.id)
 
-      // 🚀 2. 未ログイン時の投稿をログインユーザーに紐付ける
+      // 🚀 2. 未ログイン時の投稿をログインユーザーに紐付ける (データ移行処理)
       if (anonymousId) {
         console.log('4. Merging data for Anonymous ID:', anonymousId)
         
@@ -85,22 +87,25 @@ export async function GET(request: Request) {
           } else {
             console.log('6. Profile updated successfully.')
           }
-        } else {
-          console.warn('⚠️ No posts found with this anonymous_id.')
         }
-
+        // 移行が終わったら anonymous_id クッキーを消去
         cookieStore.set('anonymous_id', '', { maxAge: 0 })
       }
 
-      console.log('--- [Auth Callback] End: Success Redirect ---')
+      console.log('--- [Auth Callback] End: Success Redirect Logic ---')
 
-      // ✨ ✨ ✨ [トークン受け渡しロジックの追加] ✨ ✨ ✨
-      // リダイレクト先 URL オブジェクトを作成
-      // next がフルパス (https://...) か、相対パス (/) かを考慮して生成
-      const redirectUrl = new URL(next.startsWith('http') ? next : `${origin}${next}`)
+      // 🚀 3. トークン受け渡しロジック
+      // nextが "https://tarotai.jp" のようなフルURLかチェック
+      let redirectUrl: URL
+      try {
+        redirectUrl = new URL(next.startsWith('http') ? next : `${origin}${next}`)
+      } catch (e) {
+        redirectUrl = new URL(`${origin}/`)
+      }
 
-      // リダイレクト先が tarotai.jp などの外部ドメイン連携の場合、トークンを付与
+      // 外部ドメイン（タロットアプリ）へのリダイレクトの場合
       if (redirectUrl.hostname.includes('tarotai.jp')) {
+        console.log('7. External Domain Detected. Attaching Tokens...')
         redirectUrl.searchParams.set('access_token', session.access_token)
         redirectUrl.searchParams.set('refresh_token', session.refresh_token)
       }
@@ -114,6 +119,7 @@ export async function GET(request: Request) {
     }
   }
 
+  // codeがない場合
   console.error('🚨 [Auth Callback] No code found in URL')
   return NextResponse.redirect(`${origin}/auth/auth-error?message=no_code_present`)
 }
