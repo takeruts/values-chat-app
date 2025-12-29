@@ -26,6 +26,7 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
+      // 一元化のため、クッキーはメインドメインで管理
       cookieOptions: {
         domain: '.tarotai.jp',
         path: '/',
@@ -35,11 +36,29 @@ function LoginForm() {
     }
   )
 
+  // --- 🚀 一元化されたリダイレクト処理 (トークン付与) ---
+  const handleAuthSuccess = (session: any) => {
+    if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
+      const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
+      
+      // トークンをパラメータに付与して、各アプリのレシーバー(useEffect等)に渡す
+      url.searchParams.set('access_token', session.access_token)
+      url.searchParams.set('refresh_token', session.refresh_token)
+      
+      window.location.href = url.toString()
+    } else {
+      // リダイレクト先がない場合はカチピのダッシュボード等へ
+      router.push('/')
+      router.refresh()
+    }
+  }
+
   const handleGoogleLogin = async () => {
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
+        // Googleログイン後の戻り先はカチピのコールバック。そこからredirectToへさらに転送される
         redirectTo: `${location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
       },
     })
@@ -49,7 +68,6 @@ function LoginForm() {
     }
   }
 
-  // --- トークン受け渡し方式に対応した handleSignIn ---
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -61,20 +79,7 @@ function LoginForm() {
       setMessage(`エラー: ${error.message}`)
       setLoading(false)
     } else if (data.session) {
-      // セッション情報を取得
-      const { access_token, refresh_token } = data.session
-
-      if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
-        // リダイレクト先にトークンをパラメータとして付与
-        const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
-        url.searchParams.set('access_token', access_token)
-        url.searchParams.set('refresh_token', refresh_token)
-        
-        window.location.href = url.toString()
-      } else {
-        router.push('/')
-        router.refresh()
-      }
+      handleAuthSuccess(data.session)
     }
   }
 
@@ -83,26 +88,16 @@ function LoginForm() {
     setLoading(true)
     setMessage(null)
 
-    // --- 動的なリダイレクト先の設定 ---
-    // 1. redirect_to パラメータがある場合はそれを使う
-    // 2. ない場合は、現在の場所 (カチピ) のコールバックへ飛ばす
-    let dynamicRedirectUrl = `${window.location.origin}/auth/callback`;
-    
-    if (redirectTo) {
-      // 外部アプリ（タロット等）から来た場合は、そのアプリのURLをベースにする
-      // ただし、トークン処理が必要なので直接ドメインへ飛ばすか、
-      // 相手側の auth/callback があればそこへ飛ばす
-      dynamicRedirectUrl = redirectTo.startsWith('/') 
-        ? window.location.origin + redirectTo 
-        : redirectTo;
-    }
+    // どのアプリから来たかによって、メール内のリンクの戻り先を動的に変える
+    const emailRedirectUrl = redirectTo 
+      ? (redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
+      : `${window.location.origin}/auth/callback`;
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // 決定したURLをセット
-        emailRedirectTo: dynamicRedirectUrl,
+        emailRedirectTo: emailRedirectUrl,
       },
     })
 
@@ -119,7 +114,7 @@ function LoginForm() {
       {redirectTo && (
         <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
           <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-black">
-            Login to continue to tarotai.jp
+            Login to continue to {new URL(redirectTo.startsWith('/') ? window.location.origin : redirectTo).hostname}
           </p>
         </div>
       )}
@@ -128,7 +123,7 @@ function LoginForm() {
         <Link href="/">
           <h1 className="text-3xl font-black text-indigo-400 mb-2 tracking-tighter cursor-pointer uppercase">Kachipi</h1>
         </Link>
-        <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Authentication Gateway</p>
+        <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Identity Central</p>
       </div>
 
       <button
