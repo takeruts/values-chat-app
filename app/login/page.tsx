@@ -14,6 +14,7 @@ function LoginForm() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
+  // URLパラメータから ?redirect_to=... を取得
   const redirectTo = searchParams.get('redirect_to')
 
   const supabase = createBrowserClient(
@@ -26,7 +27,7 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
-      // 一元化のため、クッキーはメインドメインで管理
+      // 一元化のため、クッキーはメインドメイン（.tarotai.jp）で共有
       cookieOptions: {
         domain: '.tarotai.jp',
         path: '/',
@@ -36,18 +37,21 @@ function LoginForm() {
     }
   )
 
-  // --- 🚀 一元化されたリダイレクト処理 (トークン付与) ---
+  /**
+   * 🚀 一元化されたリダイレクト処理 (ログイン成功時)
+   * 既存ユーザーがログインした際、redirectToがあればトークンを付与して飛ばす
+   */
   const handleAuthSuccess = (session: any) => {
     if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
       const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
       
-      // トークンをパラメータに付与して、各アプリのレシーバー(useEffect等)に渡す
+      // トークンをパラメータに付与（各アプリのuseEffectがこれを拾う）
       url.searchParams.set('access_token', session.access_token)
       url.searchParams.set('refresh_token', session.refresh_token)
       
       window.location.href = url.toString()
     } else {
-      // リダイレクト先がない場合はカチピのダッシュボード等へ
+      // リダイレクト先がない（カチピ単体でのログイン）場合はダッシュボードへ
       router.push('/')
       router.refresh()
     }
@@ -58,7 +62,7 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Googleログイン後の戻り先はカチピのコールバック。そこからredirectToへさらに転送される
+        // Googleログイン後は一度カチピのcallbackに戻り、そこからredirectToへ転送
         redirectTo: `${location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
       },
     })
@@ -83,12 +87,17 @@ function LoginForm() {
     }
   }
 
+  /**
+   * 🚀 新規アカウント作成
+   * ここでメール内の「確認リンク」の飛ばし先を動的に決定します
+   */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    // どのアプリから来たかによって、メール内のリンクの戻り先を動的に変える
+    // リダイレクト先（タロットアプリ等）があればそこをメールリンクの着地点にする
+    // なければカチピのデフォルトcallbackにする
     const emailRedirectUrl = redirectTo 
       ? (redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
       : `${window.location.origin}/auth/callback`;
@@ -97,6 +106,7 @@ function LoginForm() {
       email,
       password,
       options: {
+        // 🚀 これにより、メール内のリンクがタロットアプリを向くようになります
         emailRedirectTo: emailRedirectUrl,
       },
     })
