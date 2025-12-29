@@ -96,17 +96,22 @@ function LoginForm() {
     setLoading(true)
     setMessage(null)
 
-    // リダイレクト先（タロットアプリ等）があればそこをメールリンクの着地点にする
-    // なければカチピのデフォルトcallbackにする
-    const emailRedirectUrl = redirectTo 
-      ? (redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
+    // 🚀 直接 URL から redirect_to を取得して、確実に値を確定させる
+    const params = new URLSearchParams(window.location.search);
+    const targetRedirect = params.get('redirect_to');
+
+    // リダイレクト先の決定
+    const emailRedirectUrl = targetRedirect 
+      ? (targetRedirect.startsWith('/') ? window.location.origin + targetRedirect : targetRedirect)
       : `${window.location.origin}/auth/callback`;
+
+    // デバッグ用（開発環境のコンソールで確認できます）
+    console.log("🔥 Requesting SignUp with redirect:", emailRedirectUrl);
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // 🚀 これにより、メール内のリンクがタロットアプリを向くようになります
         emailRedirectTo: emailRedirectUrl,
       },
     })
