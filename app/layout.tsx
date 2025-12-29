@@ -10,7 +10,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 // 🚨 修正：SEOキーワードを戦略的に埋め込んだメタデータ
 export const metadata: Metadata = {
   title: {
-    default: "価値ピ｜スペック重視に疲れた大人のための、価値観でつながる匿名チャット",
+    default: "価値ピ｜価値観でつながる匿名チャット",
     template: "%s | カチピ"
   },
   description: "年収や学歴、外見などのスペック競争に疲れたあなたへ。カチピは、ニーチェやショーペンハウアーの格言と共に、今の本音を静かにつぶやき、深い価値観で共感できる仲間を探す「大人のための聖域」です。",

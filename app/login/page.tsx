@@ -83,11 +83,26 @@ function LoginForm() {
     setLoading(true)
     setMessage(null)
 
+    // --- 動的なリダイレクト先の設定 ---
+    // 1. redirect_to パラメータがある場合はそれを使う
+    // 2. ない場合は、現在の場所 (カチピ) のコールバックへ飛ばす
+    let dynamicRedirectUrl = `${window.location.origin}/auth/callback`;
+    
+    if (redirectTo) {
+      // 外部アプリ（タロット等）から来た場合は、そのアプリのURLをベースにする
+      // ただし、トークン処理が必要なので直接ドメインへ飛ばすか、
+      // 相手側の auth/callback があればそこへ飛ばす
+      dynamicRedirectUrl = redirectTo.startsWith('/') 
+        ? window.location.origin + redirectTo 
+        : redirectTo;
+    }
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        // 決定したURLをセット
+        emailRedirectTo: dynamicRedirectUrl,
       },
     })
 
