@@ -14,9 +14,11 @@ function LoginForm() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  // URLパラメータから ?redirect_to=... を取得
+  
+  // URLパラメータから ?redirect_to=... を取得（タロットアプリなどの戻り先）
   const redirectTo = searchParams.get('redirect_to')
 
+  // Supabaseクライアントの初期化
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,9 +29,9 @@ function LoginForm() {
         detectSessionInUrl: true,
         flowType: 'pkce',
       },
-      // 一元化のため、クッキーはメインドメイン（.tarotai.jp）で共有
+      // 🚀 重要: サブドメイン間（www.kachi ↔ www.tarotai）で認証を共有するための設定
       cookieOptions: {
-        domain: '.tarotai.jp',
+        domain: '.tarotai.jp', // 先頭のドットにより全サブドメインでクッキーを共有
         path: '/',
         sameSite: 'lax',
         secure: true,
@@ -39,31 +41,34 @@ function LoginForm() {
 
   /**
    * 🚀 一元化されたリダイレクト処理 (ログイン成功時)
-   * 既存ユーザーがログインした際、redirectToがあればトークンを付与して飛ばす
+   * セッション情報をURLパラメータに付与して、各アプリのレシーバーへ渡す
    */
   const handleAuthSuccess = (session: any) => {
     if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
       const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
       
-      // トークンをパラメータに付与（各アプリのuseEffectがこれを拾う）
+      // トークンをパラメータに付与（各アプリのuseEffectがこれを拾ってsetSessionする）
       url.searchParams.set('access_token', session.access_token)
       url.searchParams.set('refresh_token', session.refresh_token)
       
       window.location.href = url.toString()
     } else {
-      // リダイレクト先がない（カチピ単体でのログイン）場合はダッシュボードへ
+      // リダイレクト先がない場合はカチピのマイページ等へ
       router.push('/')
       router.refresh()
     }
   }
 
+  /**
+   * Googleログイン処理
+   */
   const handleGoogleLogin = async () => {
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Googleログイン後は一度カチピのcallbackに戻り、そこからredirectToへ転送
-        redirectTo: `${location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        // 戻り先はカチピのcallback。そこからnextパラメータ（redirectTo）へ転送される
+        redirectTo: `${window.location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
       },
     })
     if (error) {
@@ -72,6 +77,9 @@ function LoginForm() {
     }
   }
 
+  /**
+   * 通常ログイン処理
+   */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -89,29 +97,29 @@ function LoginForm() {
 
   /**
    * 🚀 新規アカウント作成
-   * ここでメール内の「確認リンク」の飛ばし先を動的に決定します
+   * メール内の「確認リンク」の飛ばし先を、リクエスト元のアプリに合わせる
    */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    // 🚀 直接 URL から redirect_to を取得して、確実に値を確定させる
+    // 現在のURLから redirect_to を再取得（確実に最新の値を参照するため）
     const params = new URLSearchParams(window.location.search);
     const targetRedirect = params.get('redirect_to');
 
-    // リダイレクト先の決定
+    // メールのリンクをクリックした後の着地点を決定
     const emailRedirectUrl = targetRedirect 
       ? (targetRedirect.startsWith('/') ? window.location.origin + targetRedirect : targetRedirect)
       : `${window.location.origin}/auth/callback`;
 
-    // デバッグ用（開発環境のコンソールで確認できます）
     console.log("🔥 Requesting SignUp with redirect:", emailRedirectUrl);
 
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        // この設定により、Supabaseから送られるメール内のリンク先が動的に変わる
         emailRedirectTo: emailRedirectUrl,
       },
     })
@@ -126,6 +134,7 @@ function LoginForm() {
 
   return (
     <div className="max-w-md w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700 font-sans">
+      {/* どこから転送されてきたかを表示（UX向上） */}
       {redirectTo && (
         <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
           <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-black">
