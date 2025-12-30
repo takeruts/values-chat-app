@@ -33,9 +33,6 @@ function LoginForm() {
       },
       cookieOptions: {
         domain: '.tarotai.jp', // 🚀 これがPKCEエラー解消の鍵
-        path: '/',
-        sameSite: 'lax',
-        secure: true,
       },
     }
   ), [])
