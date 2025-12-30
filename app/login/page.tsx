@@ -63,25 +63,23 @@ function LoginForm() {
    * Googleログイン処理
    */
   const handleGoogleLogin = async () => {
-    setLoading(true)
+    setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // 🚀 ここがポイント！
-        // 1. redirectTo には、カチピの callback route を指定します。
-        // 2. さらに next パラメータとして、最終的な戻り先（タロットアプリなど）を渡します。
-        redirectTo: `${window.location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        // 🚀 ここを固定値で指定し、Supabase サーバー側ではなく自分の route.ts で交換させる
+        redirectTo: `https://www.kachi.tarotai.jp/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
         },
       },
-    })
+    });
     if (error) {
-      setMessage(`エラー: ${error.message}`)
-      setLoading(false)
+      setMessage(`エラー: ${error.message}`);
+      setLoading(false);
     }
-  }
+  };
 
   /**
    * 通常ログイン処理
