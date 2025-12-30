@@ -30,7 +30,7 @@ function LoginForm() {
         flowType: 'pkce',
       },
       cookieOptions: {
-        domain: '.tarotai.jp', // サブドメイン間でのログイン維持を有効にする
+        domain: process.env.NODE_ENV === 'production' ? '.tarotai.jp' : undefined,
         path: '/',
         sameSite: 'lax',
         secure: true,
@@ -41,15 +41,31 @@ function LoginForm() {
   /**
    * 🚀 ログイン成功時のリダイレクト処理
    */
-  const handleAuthSuccess = (session: any) => {
-    if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
-      const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
-      
-      // 他のサブドメインへセッション情報を引き渡すためのパラメータ付与
-      url.searchParams.set('access_token', session.access_token)
-      url.searchParams.set('refresh_token', session.refresh_token)
-      
-      window.location.href = url.toString()
+  const handleAuthSuccess = () => {
+    if (redirectTo && redirectTo.startsWith('/')) {
+      // 相対パスの場合は同一ドメイン内でリダイレクト
+      router.push(redirectTo)
+      router.refresh()
+    } else if (redirectTo) {
+      try {
+        const url = new URL(redirectTo)
+        // 厳格なドメイン検証: tarotai.jp または *.tarotai.jp のみ許可
+        const isValidDomain = url.hostname === 'tarotai.jp' || url.hostname.endsWith('.tarotai.jp')
+
+        if (isValidDomain) {
+          // トークンはCookieで共有されるため、URLパラメータには含めない
+          // セキュリティ上、トークンをURLに含めることは避ける
+          window.location.href = url.toString()
+        } else {
+          // 不正なドメインの場合はダッシュボードへ
+          router.push('/')
+          router.refresh()
+        }
+      } catch {
+        // 無効なURLの場合はダッシュボードへ
+        router.push('/')
+        router.refresh()
+      }
     } else {
       // カチピ自体のダッシュボードへ
       router.push('/')
@@ -71,7 +87,7 @@ function LoginForm() {
       setMessage(`エラー: ${error.message}`)
       setLoading(false)
     } else if (data.session) {
-      handleAuthSuccess(data.session)
+      handleAuthSuccess()
     }
   }
 

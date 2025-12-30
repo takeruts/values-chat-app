@@ -21,6 +21,9 @@ export async function GET(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        auth: {
+          flowType: 'pkce',
+        },
         cookies: {
           getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, {
                   ...options,
-                  domain: '.tarotai.jp', // 🚀 サブドメイン間で共有可能にする
+                  domain: process.env.NODE_ENV === 'production' ? '.tarotai.jp' : undefined,
                   path: '/',
                 })
               )
@@ -45,7 +48,6 @@ export async function GET(request: Request) {
     
     if (!error && data.user && data.session) {
       const user = data.user
-      const session = data.session
       console.log('3. Login Success: ', user.id)
 
       // 🚀 2. データ移行処理（匿名投稿をログインユーザーに紐付け）
@@ -87,10 +89,10 @@ export async function GET(request: Request) {
         }
         
         // 移行完了後、anonymous_id クッキーを消去
-        cookieStore.set('anonymous_id', '', { 
-          maxAge: 0, 
-          domain: '.tarotai.jp', 
-          path: '/' 
+        cookieStore.set('anonymous_id', '', {
+          maxAge: 0,
+          domain: process.env.NODE_ENV === 'production' ? '.tarotai.jp' : undefined,
+          path: '/'
         })
       }
 
@@ -104,14 +106,15 @@ export async function GET(request: Request) {
         redirectUrl = new URL('/', origin)
       }
 
-      // 外部ドメイン（タロットアプリ）へのリダイレクト時にトークンを付与（SSO用）
-      const isExternal = redirectUrl.hostname.includes('tarotai.jp') && 
+      // 外部ドメイン（タロットアプリ）へのリダイレクト時の検証を厳格化
+      const isExternal = (redirectUrl.hostname === 'tarotai.jp' ||
+                         redirectUrl.hostname.endsWith('.tarotai.jp')) &&
                          redirectUrl.hostname !== new URL(origin).hostname;
 
+      // トークンはCookieで既に設定されているため、URLパラメータには含めない
+      // セキュリティ上、トークンをURLに含めることは避ける
       if (isExternal) {
-        console.log('7. External Domain Detected. Attaching Tokens...')
-        redirectUrl.searchParams.set('access_token', session.access_token)
-        redirectUrl.searchParams.set('refresh_token', session.refresh_token)
+        console.log('7. External Domain Detected. Redirecting with cookies...')
       }
 
       return NextResponse.redirect(redirectUrl.toString())
@@ -120,11 +123,11 @@ export async function GET(request: Request) {
     if (error) {
       console.error('🚨 Auth Exchange Error:', error.message)
       return NextResponse.redirect(
-        `${origin}/auth/auth-error?message=${encodeURIComponent(error.message)}`
+        `${origin}/auth/auth-error?message=authentication_failed`
       )
     }
   }
 
   // codeがない場合（直接アクセスなど）
-  return NextResponse.redirect(`${origin}/auth/auth-error?message=no_code_present`)
+  return NextResponse.redirect(`${origin}/auth/auth-error?message=authentication_failed`)
 }
