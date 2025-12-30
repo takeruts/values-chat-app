@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, Suspense, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -18,8 +18,10 @@ function LoginForm() {
   // URLパラメータから ?redirect_to=... を取得（タロットアプリなどの戻り先）
   const redirectTo = searchParams.get('redirect_to')
 
-  // Supabaseクライアントの初期化
-  const supabase = createBrowserClient(
+  // 🚀 Supabaseクライアントのメモ化
+  // cookieOptionsに domain: '.tarotai.jp' を入れることで、
+  // Googleログイン開始時の「合言葉(verifier)」を全サブドメインで共有可能にします。
+  const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -27,33 +29,30 @@ function LoginForm() {
         storageKey: 'sb-auth-token',
         persistSession: true,
         detectSessionInUrl: true,
-        flowType: 'pkce',
+        flowType: 'pkce', // 必須設定
       },
-      // 🚀 重要: サブドメイン間（www.kachi ↔ www.tarotai）で認証を共有するための設定
       cookieOptions: {
-        domain: '.tarotai.jp', // 先頭のドットにより全サブドメインでクッキーを共有
+        domain: '.tarotai.jp', // 🚀 これがPKCEエラー解消の鍵
         path: '/',
         sameSite: 'lax',
         secure: true,
       },
     }
-  )
+  ), [])
 
   /**
    * 🚀 一元化されたリダイレクト処理 (ログイン成功時)
-   * セッション情報をURLパラメータに付与して、各アプリのレシーバーへ渡す
    */
   const handleAuthSuccess = (session: any) => {
     if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
       const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
       
-      // トークンをパラメータに付与（各アプリのuseEffectがこれを拾ってsetSessionする）
+      // トークンをパラメータに付与
       url.searchParams.set('access_token', session.access_token)
       url.searchParams.set('refresh_token', session.refresh_token)
       
       window.location.href = url.toString()
     } else {
-      // リダイレクト先がない場合はカチピのマイページ等へ
       router.push('/')
       router.refresh()
     }
@@ -64,13 +63,21 @@ function LoginForm() {
    */
   const handleGoogleLogin = async () => {
     setLoading(true);
+    // 🚀 Google認証後の戻り先を「カチピのcallback」に固定
+    const callbackUrl = `${window.location.origin}/auth/callback`;
+    const finalRedirect = redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : '';
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // Supabase 経由で最終的に戻ってくる先の自社URL
-        redirectTo: `https://www.kachi.tarotai.jp/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        redirectTo: `${callbackUrl}${finalRedirect}`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     });
+
     if (error) {
       setMessage(`エラー: ${error.message}`);
       setLoading(false);
@@ -96,15 +103,13 @@ function LoginForm() {
   }
 
   /**
-   * 🚀 新規アカウント作成
-   * メール内の「確認リンク」の飛ばし先を、リクエスト元のアプリに合わせる
+   * 新規アカウント作成
    */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
 
-    // 現在のURLから redirect_to を再取得（確実に最新の値を参照するため）
     const params = new URLSearchParams(window.location.search);
     const targetRedirect = params.get('redirect_to');
 
@@ -113,13 +118,10 @@ function LoginForm() {
       ? (targetRedirect.startsWith('/') ? window.location.origin + targetRedirect : targetRedirect)
       : `${window.location.origin}/auth/callback`;
 
-    console.log("🔥 Requesting SignUp with redirect:", emailRedirectUrl);
-
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // この設定により、Supabaseから送られるメール内のリンク先が動的に変わる
         emailRedirectTo: emailRedirectUrl,
       },
     })
@@ -127,14 +129,13 @@ function LoginForm() {
     if (error) {
       setMessage(`エラー: ${error.message}`)
     } else {
-      setMessage('確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。')
+      setMessage('確認メールを送信しました。リンクをクリックして登録を完了してください。')
     }
     setLoading(false)
   }
 
   return (
     <div className="max-w-md w-full bg-gray-800 p-8 rounded-3xl shadow-2xl border border-gray-700 font-sans">
-      {/* どこから転送されてきたかを表示（UX向上） */}
       {redirectTo && (
         <div className="mb-6 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-center">
           <p className="text-[10px] text-indigo-300 tracking-widest uppercase font-black">
