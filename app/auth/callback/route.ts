@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   console.log('1. Auth Code:', code ? 'Present' : 'Missing')
   console.log('2. Target Next:', next)
   
-  const cookieStore = await cookies() // 🚀 Next.js 16 では await が必要
+  const cookieStore = await cookies() 
 
   if (code) {
     const anonymousId = cookieStore.get('anonymous_id')?.value
@@ -27,12 +27,12 @@ export async function GET(request: Request) {
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, {
                   ...options,
-                  domain: '.tarotai.jp', // 🚀 これを追加！全サブドメインで PKCE コードを共有させる
+                  domain: '.tarotai.jp', // 🚀 サブドメイン間で PKCE コード等のクッキーを共有
                   path: '/',
                 })
               )
             } catch {
-              // Server Component からのセットは制限があるが、PKCEフロー自体は継続可能
+              // Server Component 内でのセット失敗は無視可能
             }
           },
         },
@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     )
 
     // 🚀 1. 認証コードをセッションに交換
+    // ここで PKCE 検証が行われます
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error && data.user && data.session) {
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       const session = data.session
       console.log('3. Login Success: ', user.id)
 
-      // 🚀 2. データ移行処理 (匿名IDがある場合)
+      // 🚀 2. データ移行処理
       if (anonymousId) {
         console.log('4. Merging data for Anonymous ID:', anonymousId)
         
@@ -65,8 +66,6 @@ export async function GET(request: Request) {
         }
 
         if (updatedPosts && updatedPosts.length > 0) {
-          console.log(`5. Successfully merged ${updatedPosts.length} posts.`)
-
           const latestPost = [...updatedPosts].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
@@ -77,41 +76,37 @@ export async function GET(request: Request) {
             .eq('user_id', user.id)
             .single()
 
-          const { error: upsertError } = await supabase.from('value_profiles').upsert({
+          await supabase.from('value_profiles').upsert({
             user_id: user.id,
             nickname: existingProfile?.nickname || latestPost.nickname,
             content: latestPost.content,
             embedding: latestPost.embedding,
             updated_at: new Date().toISOString()
           })
-
-          if (upsertError) {
-            console.error('🚨 Upsert Error in value_profiles:', upsertError.message)
-          } else {
-            console.log('6. Profile updated successfully.')
-          }
         }
         // クッキー消去
-        cookieStore.set('anonymous_id', '', { maxAge: 0, domain: '.tarotai.jp', path: '/' })
+        cookieStore.set('anonymous_id', '', { 
+          maxAge: 0, 
+          domain: '.tarotai.jp', 
+          path: '/' 
+        })
       }
 
       console.log('--- [Auth Callback] End: Success Redirect Logic ---')
 
-      // 🚀 3. トークン受け渡し & リダイレクト先決定
+      // 🚀 3. リダイレクトURLの構築
       let redirectUrl: URL
       try {
-        // nextがフルURL（外部アプリ）か、相対パス（自アプリ）かを判定
-        if (next.startsWith('http')) {
-          redirectUrl = new URL(next)
-        } else {
-          redirectUrl = new URL(next, origin)
-        }
+        redirectUrl = new URL(next.startsWith('http') ? next : `${origin}${next}`)
       } catch (e) {
         redirectUrl = new URL('/', origin)
       }
 
-      // 外部ドメイン（タロットアプリ）へのリダイレクトの場合、SSO用にトークンを付与
-      if (redirectUrl.hostname.includes('tarotai.jp') && redirectUrl.hostname !== new URL(origin).hostname) {
+      // 外部ドメイン（タロットアプリ）へのリダイレクト時にトークンを付与
+      const isExternal = redirectUrl.hostname.includes('tarotai.jp') && 
+                         redirectUrl.hostname !== new URL(origin).hostname;
+
+      if (isExternal) {
         console.log('7. External Domain Detected. Attaching Tokens...')
         redirectUrl.searchParams.set('access_token', session.access_token)
         redirectUrl.searchParams.set('refresh_token', session.refresh_token)
@@ -122,11 +117,12 @@ export async function GET(request: Request) {
     
     if (error) {
       console.error('🚨 Auth Exchange Error:', error.message)
-      return NextResponse.redirect(`${origin}/auth/auth-error?message=${encodeURIComponent(error.message)}`)
+      // エラーメッセージをエンコードしてリダイレクト
+      return NextResponse.redirect(
+        `${origin}/auth/auth-error?message=${encodeURIComponent(error.message)}`
+      )
     }
   }
 
-  // codeがない場合
-  console.error('🚨 [Auth Callback] No code found in URL')
   return NextResponse.redirect(`${origin}/auth/auth-error?message=no_code_present`)
 }
