@@ -11,8 +11,9 @@ export async function GET(request: Request) {
   console.log('1. Auth Code:', code ? 'Present' : 'Missing')
   console.log('2. Target Next:', next)
   
+  const cookieStore = await cookies() // 🚀 Next.js 16 では await が必要
+
   if (code) {
-    const cookieStore = await cookies()
     const anonymousId = cookieStore.get('anonymous_id')?.value
 
     const supabase = createServerClient(
@@ -24,11 +25,14 @@ export async function GET(request: Request) {
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
+                cookieStore.set(name, value, {
+                  ...options,
+                  domain: '.tarotai.jp', // 🚀 これを追加！全サブドメインで PKCE コードを共有させる
+                  path: '/',
+                })
               )
             } catch {
-              // Server Componentからのリダイレクト時はセットできないが、
-              // exchangeCodeForSession自体は動作します
+              // Server Component からのセットは制限があるが、PKCEフロー自体は継続可能
             }
           },
         },
@@ -36,7 +40,6 @@ export async function GET(request: Request) {
     )
 
     // 🚀 1. 認証コードをセッションに交換
-    // Googleログイン時などはここでのセッション取得が必須です
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error && data.user && data.session) {
@@ -44,7 +47,7 @@ export async function GET(request: Request) {
       const session = data.session
       console.log('3. Login Success: ', user.id)
 
-      // 🚀 2. 未ログイン時の投稿をログインユーザーに紐付ける (データ移行処理)
+      // 🚀 2. データ移行処理 (匿名IDがある場合)
       if (anonymousId) {
         console.log('4. Merging data for Anonymous ID:', anonymousId)
         
@@ -64,7 +67,7 @@ export async function GET(request: Request) {
         if (updatedPosts && updatedPosts.length > 0) {
           console.log(`5. Successfully merged ${updatedPosts.length} posts.`)
 
-          const latestPost = updatedPosts.sort((a, b) => 
+          const latestPost = [...updatedPosts].sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )[0]
 
@@ -88,23 +91,27 @@ export async function GET(request: Request) {
             console.log('6. Profile updated successfully.')
           }
         }
-        // 移行が終わったら anonymous_id クッキーを消去
-        cookieStore.set('anonymous_id', '', { maxAge: 0 })
+        // クッキー消去
+        cookieStore.set('anonymous_id', '', { maxAge: 0, domain: '.tarotai.jp', path: '/' })
       }
 
       console.log('--- [Auth Callback] End: Success Redirect Logic ---')
 
-      // 🚀 3. トークン受け渡しロジック
-      // nextが "https://tarotai.jp" のようなフルURLかチェック
+      // 🚀 3. トークン受け渡し & リダイレクト先決定
       let redirectUrl: URL
       try {
-        redirectUrl = new URL(next.startsWith('http') ? next : `${origin}${next}`)
+        // nextがフルURL（外部アプリ）か、相対パス（自アプリ）かを判定
+        if (next.startsWith('http')) {
+          redirectUrl = new URL(next)
+        } else {
+          redirectUrl = new URL(next, origin)
+        }
       } catch (e) {
-        redirectUrl = new URL(`${origin}/`)
+        redirectUrl = new URL('/', origin)
       }
 
-      // 外部ドメイン（タロットアプリ）へのリダイレクトの場合
-      if (redirectUrl.hostname.includes('tarotai.jp')) {
+      // 外部ドメイン（タロットアプリ）へのリダイレクトの場合、SSO用にトークンを付与
+      if (redirectUrl.hostname.includes('tarotai.jp') && redirectUrl.hostname !== new URL(origin).hostname) {
         console.log('7. External Domain Detected. Attaching Tokens...')
         redirectUrl.searchParams.set('access_token', session.access_token)
         redirectUrl.searchParams.set('refresh_token', session.refresh_token)
