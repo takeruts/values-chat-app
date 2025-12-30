@@ -67,8 +67,8 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // 🚀 redirectTo は「カチピのドメイン」を指定します
-        redirectTo: `https://www.kachi.tarotai.jp/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        // Supabase 経由で最終的に戻ってくる先の自社URL
+        redirectTo: `${window.location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
       },
     });
     if (error) {
