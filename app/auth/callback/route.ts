@@ -29,6 +29,8 @@ export async function GET(request: Request) {
                   ...options,
                   domain: '.tarotai.jp', // 🚀 サブドメイン間で PKCE コード等のクッキーを共有
                   path: '/',
+                  sameSite: 'lax',
+                  secure: true,
                 })
               )
             } catch {
