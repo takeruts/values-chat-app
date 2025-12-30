@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  // nextはメール認証後の最終リダイレクト先
   const next = searchParams.get('next') ?? '/'
 
   console.log('--- [Auth Callback] Start ---')
@@ -27,19 +28,19 @@ export async function GET(request: Request) {
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, {
                   ...options,
-                  domain: '.tarotai.jp', // 🚀 サブドメイン間で PKCE コード等のクッキーを共有
+                  domain: '.tarotai.jp', // 🚀 サブドメイン間で共有可能にする
+                  path: '/',
                 })
               )
             } catch {
-              // Server Component 内でのセット失敗は無視可能
+              // サーバーサイドでのセット失敗は無視可能
             }
           },
         },
       }
     )
 
-    // 🚀 1. 認証コードをセッションに交換
-    // ここで PKCE 検証が行われます
+    // 🚀 1. 認証コードをセッションに交換（メール認証を確定）
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error && data.user && data.session) {
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       const session = data.session
       console.log('3. Login Success: ', user.id)
 
-      // 🚀 2. データ移行処理
+      // 🚀 2. データ移行処理（匿名投稿をログインユーザーに紐付け）
       if (anonymousId) {
         console.log('4. Merging data for Anonymous ID:', anonymousId)
         
@@ -75,6 +76,7 @@ export async function GET(request: Request) {
             .eq('user_id', user.id)
             .single()
 
+          // 価値観プロフィールを更新または作成
           await supabase.from('value_profiles').upsert({
             user_id: user.id,
             nickname: existingProfile?.nickname || latestPost.nickname,
@@ -83,7 +85,8 @@ export async function GET(request: Request) {
             updated_at: new Date().toISOString()
           })
         }
-        // クッキー消去
+        
+        // 移行完了後、anonymous_id クッキーを消去
         cookieStore.set('anonymous_id', '', { 
           maxAge: 0, 
           domain: '.tarotai.jp', 
@@ -101,7 +104,7 @@ export async function GET(request: Request) {
         redirectUrl = new URL('/', origin)
       }
 
-      // 外部ドメイン（タロットアプリ）へのリダイレクト時にトークンを付与
+      // 外部ドメイン（タロットアプリ）へのリダイレクト時にトークンを付与（SSO用）
       const isExternal = redirectUrl.hostname.includes('tarotai.jp') && 
                          redirectUrl.hostname !== new URL(origin).hostname;
 
@@ -116,12 +119,12 @@ export async function GET(request: Request) {
     
     if (error) {
       console.error('🚨 Auth Exchange Error:', error.message)
-      // エラーメッセージをエンコードしてリダイレクト
       return NextResponse.redirect(
         `${origin}/auth/auth-error?message=${encodeURIComponent(error.message)}`
       )
     }
   }
 
+  // codeがない場合（直接アクセスなど）
   return NextResponse.redirect(`${origin}/auth/auth-error?message=no_code_present`)
 }

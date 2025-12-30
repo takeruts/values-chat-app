@@ -18,9 +18,7 @@ function LoginForm() {
   // URLパラメータから ?redirect_to=... を取得（タロットアプリなどの戻り先）
   const redirectTo = searchParams.get('redirect_to')
 
-  // 🚀 Supabaseクライアントのメモ化
-  // cookieOptionsに domain: '.tarotai.jp' を入れることで、
-  // Googleログイン開始時の「合言葉(verifier)」を全サブドメインで共有可能にします。
+  // Supabaseクライアントのメモ化
   const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -29,60 +27,38 @@ function LoginForm() {
         storageKey: 'sb-auth-token',
         persistSession: true,
         detectSessionInUrl: true,
-        flowType: 'pkce', // 必須設定
+        flowType: 'pkce',
       },
       cookieOptions: {
-        domain: '.tarotai.jp', // 🚀 これがPKCEエラー解消の鍵
+        domain: '.tarotai.jp', // サブドメイン間でのログイン維持を有効にする
+        path: '/',
+        sameSite: 'lax',
+        secure: true,
       },
     }
   ), [])
 
   /**
-   * 🚀 一元化されたリダイレクト処理 (ログイン成功時)
+   * 🚀 ログイン成功時のリダイレクト処理
    */
   const handleAuthSuccess = (session: any) => {
     if (redirectTo && (redirectTo.includes('tarotai.jp') || redirectTo.startsWith('/'))) {
       const url = new URL(redirectTo.startsWith('/') ? window.location.origin + redirectTo : redirectTo)
       
-      // トークンをパラメータに付与
+      // 他のサブドメインへセッション情報を引き渡すためのパラメータ付与
       url.searchParams.set('access_token', session.access_token)
       url.searchParams.set('refresh_token', session.refresh_token)
       
       window.location.href = url.toString()
     } else {
+      // カチピ自体のダッシュボードへ
       router.push('/')
       router.refresh()
     }
   }
 
   /**
-   * Googleログイン処理
-   */
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    // 🚀 Google認証後の戻り先を「カチピのcallback」に固定
-    const callbackUrl = `${window.location.origin}/auth/callback`;
-    const finalRedirect = redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : '';
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${callbackUrl}${finalRedirect}`,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
-    });
-
-    if (error) {
-      setMessage(`エラー: ${error.message}`);
-      setLoading(false);
-    }
-  };
-
-  /**
-   * 通常ログイン処理
+   * 通常ログイン（メール/パスワード）
    */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -110,7 +86,7 @@ function LoginForm() {
     const params = new URLSearchParams(window.location.search);
     const targetRedirect = params.get('redirect_to');
 
-    // メールのリンクをクリックした後の着地点を決定
+    // メール内リンクの着地点（カチピのcallback経由で元のアプリへ）
     const emailRedirectUrl = targetRedirect 
       ? (targetRedirect.startsWith('/') ? window.location.origin + targetRedirect : targetRedirect)
       : `${window.location.origin}/auth/callback`;
@@ -126,7 +102,7 @@ function LoginForm() {
     if (error) {
       setMessage(`エラー: ${error.message}`)
     } else {
-      setMessage('確認メールを送信しました。リンクをクリックして登録を完了してください。')
+      setMessage('確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。')
     }
     setLoading(false)
   }
@@ -141,30 +117,16 @@ function LoginForm() {
         </div>
       )}
 
-      <div className="text-center mb-8">
+      <div className="text-center mb-10">
         <Link href="/">
           <h1 className="text-3xl font-black text-indigo-400 mb-2 tracking-tighter cursor-pointer uppercase">Kachipi</h1>
         </Link>
         <p className="text-gray-400 text-xs font-bold uppercase tracking-wider">Identity Central</p>
       </div>
 
-      <button
-        onClick={handleGoogleLogin}
-        disabled={loading}
-        className="w-full flex items-center justify-center gap-3 bg-white text-gray-900 font-bold h-14 rounded-2xl mb-6 hover:bg-gray-100 transition active:scale-95 disabled:opacity-50"
-      >
-        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
-        Googleでログイン
-      </button>
-
-      <div className="relative mb-6">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-700"></div></div>
-        <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-gray-800 px-4 text-gray-500 font-bold">Or use email</span></div>
-      </div>
-
       <form className="space-y-4" onSubmit={handleSignIn}>
         <div>
-          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5 ml-1 tracking-widest">Email</label>
+          <label className="text-[10px] font-bold text-gray-500 uppercase block mb-1.5 ml-1 tracking-widest">Email Address</label>
           <input
             type="email"
             className="w-full p-4 rounded-2xl bg-gray-900 text-gray-200 border border-gray-700 focus:border-indigo-500 outline-none transition-all shadow-inner"
@@ -206,7 +168,7 @@ function LoginForm() {
           </div>
         )}
 
-        <div className="flex flex-col gap-3 pt-4">
+        <div className="flex flex-col gap-3 pt-6">
           <button
             type="submit"
             disabled={loading}
@@ -220,14 +182,14 @@ function LoginForm() {
             disabled={loading}
             className="w-full bg-transparent text-gray-500 font-bold h-12 rounded-2xl border border-gray-700 hover:bg-gray-700/30 transition active:scale-95 disabled:opacity-50 text-xs"
           >
-            新規アカウント作成
+            新規アカウントを作成する
           </button>
         </div>
       </form>
 
       <div className="mt-8 text-center">
         <Link href="/" className="text-[10px] font-bold text-gray-600 hover:text-indigo-400 transition uppercase tracking-widest">
-          ← Back to kachipi home
+          ← Back to home
         </Link>
       </div>
     </div>
