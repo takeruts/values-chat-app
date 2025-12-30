@@ -67,8 +67,14 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // 戻り先はカチピのcallback。そこからnextパラメータ（redirectTo）へ転送される
+        // 🚀 ここがポイント！
+        // 1. redirectTo には、カチピの callback route を指定します。
+        // 2. さらに next パラメータとして、最終的な戻り先（タロットアプリなど）を渡します。
         redirectTo: `${window.location.origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     })
     if (error) {
